@@ -10,11 +10,12 @@ Convolo is a complete, self-contained language-learning MVP built with Next.js. 
 - Local profile setup: native language, target language, learning level, and daily goal
 - A demo workspace that can be opened immediately
 - Four target-language paths: Spanish, French, German, and Japanese
+- Safe target-language switching from Settings: old vocabulary, conversations, unfinished drafts, and per-language activity stay intact
 - Four interactive guided scenarios: café, introductions, directions, and hotel check-in
 - Local tutor replies, translations, phrase suggestions, vocabulary extraction, and browser text-to-speech controls
 - Saved vocabulary with search, filters, custom words, and a simple spaced-review queue
-- Persisted XP, practice minutes, turns, streaks, scenario milestones, weekly charts, and daily goals
-- Profile preferences, downloadable JSON data export, and full local-data reset
+- Per-language XP, practice minutes, turns, streaks, scenario milestones, weekly charts, and daily goals, plus all-time totals
+- Profile preferences, protected draft discard, downloadable JSON data export, and full local-data reset
 - Privacy and terms pages that accurately describe the local-only data model
 
 ## Running locally
@@ -37,6 +38,7 @@ npm run dev -- --hostname 0.0.0.0
 ```bash
 npm run lint
 npm run typecheck
+npm test
 npm run build
 ```
 
@@ -65,17 +67,20 @@ src/
 ├── components/          # Workspace, onboarding, practice, vocabulary and UI components
 └── lib/
     ├── catalog.ts       # Language/scenario content and local tutor guidance
+    ├── learning-data.ts # V1→V2 local-data migration and defensive validation
     ├── learning-utils.ts# Date, streak, and statistics utilities
     └── types.ts         # Shared data types
+scripts/
+└── test-learning-data.mjs # Migration and malformed-storage tests
 ```
 
 `src/components/learning-provider.tsx` is the client-side state boundary. It validates and loads local data after hydration, persists every learning action to `localStorage`, and exposes actions to the rest of the interface.
 
 ## Local data and privacy
 
-The browser key is `convolo.local-learning-data.v1`. It contains the display name/email supplied during setup, selected learning preferences, conversations, vocabulary, and activity metrics. Nothing in the learning flow sends these records to an API.
+The browser key remains `convolo.local-learning-data.v1`; the stored schema is now **V2**. It contains the display name/email supplied during setup, selected learning preferences, conversations, vocabulary, a lifetime activity ledger, and a separate ledger for each target language. Existing V1 data is migrated safely on load: its prior activity is assigned to the language that was active when it was saved.
 
-Use **Settings → Export JSON** before clearing browser storage or resetting the workspace.
+Switching target language does **not** wipe or merge records. Convolo preserves the old language path, adds only missing starter phrases for the new path, and keeps unfinished conversations as drafts that can be resumed after switching back. Use **Settings → Export JSON** before clearing browser storage or resetting the workspace.
 
 ## Moving toward production
 

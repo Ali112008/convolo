@@ -41,7 +41,13 @@ const localeByLanguage = {
 };
 
 export function PracticeStudio() {
-  const { data, startConversation, recordPracticeTurn, finishConversation } = useLearning();
+  const {
+    data,
+    startConversation,
+    recordPracticeTurn,
+    finishConversation,
+    discardConversation,
+  } = useLearning();
   const profile = data.profile;
   const [selectedScenarioId, setSelectedScenarioId] = useState<ScenarioId>("cafe");
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -50,6 +56,7 @@ export function PracticeStudio() {
   const [isReplying, setIsReplying] = useState(false);
   const [showTranslations, setShowTranslations] = useState(true);
   const [lastFeedback, setLastFeedback] = useState<TutorTurn | null>(null);
+  const [confirmingDraftDiscard, setConfirmingDraftDiscard] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const activeConversation = useMemo(
@@ -68,6 +75,15 @@ export function PracticeStudio() {
 
   const language = profile.targetLanguage;
   const languageName = getLanguageLabel(language);
+  const selectedDraft = data.conversations.find(
+    (conversation) =>
+      !conversation.completedAt &&
+      conversation.language === language &&
+      conversation.scenarioId === selectedScenarioId
+  );
+  const selectedDraftResponses = selectedDraft?.messages.filter(
+    (message) => message.role === "learner"
+  ).length ?? 0;
   const scenarioContent = selectedScenario.languageContent[language];
   const activeScenario = activeConversation ? getScenario(activeConversation.scenarioId) : null;
   const activeContent = activeScenario?.languageContent[language];
@@ -94,15 +110,33 @@ export function PracticeStudio() {
     setDraft("");
     setPendingText(null);
     setLastFeedback(null);
+    setConfirmingDraftDiscard(false);
     setIsReplying(false);
   }
 
+  function resumeDraft() {
+    if (!selectedDraft) return;
+    setActiveConversationId(selectedDraft.id);
+    setDraft("");
+    setPendingText(null);
+    setLastFeedback(null);
+    setConfirmingDraftDiscard(false);
+  }
+
+  function discardSelectedDraft() {
+    if (!selectedDraft) return;
+    discardConversation(selectedDraft.id);
+    setConfirmingDraftDiscard(false);
+    setDraft("");
+    setPendingText(null);
+    setLastFeedback(null);
+  }
+
   function selectScenario(id: ScenarioId) {
-    if (isReplying) return;
+    if (isReplying || activeConversation) return;
     setSelectedScenarioId(id);
-    if (!activeConversation) {
-      setLastFeedback(null);
-    }
+    setLastFeedback(null);
+    setConfirmingDraftDiscard(false);
   }
 
   function sendMessage(event: FormEvent<HTMLFormElement>) {
@@ -144,6 +178,7 @@ export function PracticeStudio() {
     setDraft("");
     setPendingText(null);
     setLastFeedback(null);
+    setConfirmingDraftDiscard(false);
     setIsReplying(false);
   }
 
@@ -181,7 +216,10 @@ export function PracticeStudio() {
               const Icon = iconByScenario[scenario.icon];
               const selected = scenario.id === selectedScenarioId;
               const hasCompleted = data.conversations.some(
-                (conversation) => conversation.scenarioId === scenario.id && conversation.completedAt
+                (conversation) =>
+                  conversation.language === language &&
+                  conversation.scenarioId === scenario.id &&
+                  conversation.completedAt
               );
               return (
                 <button
@@ -189,7 +227,7 @@ export function PracticeStudio() {
                   className={`scenario-option ${selected ? "scenario-selected" : ""}`}
                   key={scenario.id}
                   onClick={() => selectScenario(scenario.id)}
-                  disabled={isReplying}
+                  disabled={isReplying || Boolean(activeConversation)}
                 >
                   <span className="scenario-icon"><Icon size={19} /></span>
                   <span className="scenario-option-copy">
@@ -230,9 +268,37 @@ export function PracticeStudio() {
                   <small>{scenarioContent.openingTranslation}</small>
                 </div>
               </div>
-              <button className="button button-primary button-large" type="button" onClick={beginPractice}>
-                Start conversation <Play size={17} />
-              </button>
+              {selectedDraft ? (
+                <div className="draft-resume-area">
+                  <div className="draft-resume-summary">
+                    <span><MessageCircleMore size={16} /> SAVED DRAFT</span>
+                    <p>
+                      {selectedDraftResponses} response{selectedDraftResponses === 1 ? "" : "s"} saved in this scene.
+                    </p>
+                  </div>
+                  <div className="draft-resume-actions">
+                    <button className="button button-primary" type="button" onClick={resumeDraft}>
+                      Resume saved draft <Play size={17} />
+                    </button>
+                    <button className="button button-ghost" type="button" onClick={() => setConfirmingDraftDiscard(true)}>
+                      Start over
+                    </button>
+                  </div>
+                  {confirmingDraftDiscard && (
+                    <div className="draft-discard-confirmation">
+                      <p>Discard this unfinished transcript? Your earned XP and practice time stay in your progress history.</p>
+                      <div>
+                        <button className="button button-ghost" type="button" onClick={() => setConfirmingDraftDiscard(false)}>Keep draft</button>
+                        <button className="button button-danger" type="button" onClick={discardSelectedDraft}>Discard draft</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <button className="button button-primary button-large" type="button" onClick={beginPractice}>
+                  Start conversation <Play size={17} />
+                </button>
+              )}
               <span className="intro-footnote">Guidance is generated locally; it does not send your text to a server.</span>
             </div>
           )}

@@ -1,4 +1,11 @@
-import type { AppStats, DailyActivity, LearningData } from "./types";
+import type {
+  AppStats,
+  Conversation,
+  DailyActivity,
+  LearningData,
+  TargetLanguage,
+  VocabularyWord,
+} from "./types";
 
 const DAY_IN_MS = 86_400_000;
 
@@ -40,29 +47,53 @@ export function calculateStreak(dailyActivity: Record<string, DailyActivity>): n
   return streak;
 }
 
-export function calculateStats(data: LearningData): AppStats {
-  const activityEntries = Object.values(data.dailyActivity);
+export function calculateStatsFromActivity(
+  dailyActivity: Record<string, DailyActivity>,
+  conversations: Conversation[],
+  vocabulary: VocabularyWord[]
+): AppStats {
+  const activityEntries = Object.values(dailyActivity);
   const totalXp = activityEntries.reduce((sum, activity) => sum + activity.xp, 0);
   const totalMinutes = activityEntries.reduce(
     (sum, activity) => sum + activity.minutes,
     0
   );
   const totalTurns = activityEntries.reduce((sum, activity) => sum + activity.turns, 0);
-  const today = data.dailyActivity[dayKey()] ?? emptyActivity();
+  const today = dailyActivity[dayKey()] ?? emptyActivity();
 
   return {
     totalXp,
     totalMinutes,
     totalTurns,
-    completedConversations: data.conversations.filter(
-      (conversation) => conversation.completedAt
-    ).length,
-    streak: calculateStreak(data.dailyActivity),
+    completedConversations: conversations.filter((conversation) => conversation.completedAt)
+      .length,
+    streak: calculateStreak(dailyActivity),
     todayXp: today.xp,
     todayMinutes: today.minutes,
     todayTurns: today.turns,
-    wordsLearned: data.vocabulary.filter((word) => word.correctCount > 0).length,
+    wordsLearned: vocabulary.filter((word) => word.correctCount > 0).length,
   };
+}
+
+/** Returns all-time statistics across every target language. */
+export function calculateStats(data: LearningData): AppStats {
+  return calculateStatsFromActivity(
+    data.dailyActivity,
+    data.conversations,
+    data.vocabulary
+  );
+}
+
+/** Returns statistics for one target language without mixing past language paths. */
+export function calculateLanguageStats(
+  data: LearningData,
+  language: TargetLanguage
+): AppStats {
+  return calculateStatsFromActivity(
+    data.languageActivity[language] ?? {},
+    data.conversations.filter((conversation) => conversation.language === language),
+    data.vocabulary.filter((word) => word.language === language)
+  );
 }
 
 export function shortDate(value: string): string {

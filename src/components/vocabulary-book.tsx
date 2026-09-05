@@ -24,7 +24,7 @@ import { useLearning } from "./learning-provider";
 type Filter = "all" | "due" | "learned";
 
 export function VocabularyBook() {
-  const { data, addWord, reviewWord, now, stats } = useLearning();
+  const { data, addWord, reviewWord, now, activeStats } = useLearning();
   const profile = data.profile;
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
@@ -98,7 +98,7 @@ export function VocabularyBook() {
         </article>
         <article className="vocabulary-summary-card">
           <span className="summary-icon summary-mint"><CheckCircle2 size={20} /></span>
-          <div><strong>{stats.wordsLearned}</strong><small>words reviewed successfully</small></div>
+          <div><strong>{activeStats.wordsLearned}</strong><small>words reviewed successfully</small></div>
         </article>
       </section>
 

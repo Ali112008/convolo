@@ -28,24 +28,31 @@ const achievements = [
 ];
 
 export function DashboardOverview() {
-  const { data, now, stats } = useLearning();
+  const { data, now, activeStats } = useLearning();
   const profile = data.profile;
 
   if (!profile) return null;
 
   const targetLanguage = getLanguageLabel(profile.targetLanguage);
   const completedScenarioIds = new Set(
-    data.conversations.filter((conversation) => conversation.completedAt).map((conversation) => conversation.scenarioId)
+    data.conversations
+      .filter(
+        (conversation) =>
+          conversation.language === profile.targetLanguage && conversation.completedAt
+      )
+      .map((conversation) => conversation.scenarioId)
   );
   const nextScenario = SCENARIOS.find((scenario) => !completedScenarioIds.has(scenario.id)) ?? SCENARIOS[0];
   const dueWords = data.vocabulary.filter(
-    (word) => new Date(word.nextReviewAt).getTime() <= now
+    (word) =>
+      word.language === profile.targetLanguage &&
+      new Date(word.nextReviewAt).getTime() <= now
   );
-  const goalPercent = Math.min(100, Math.round((stats.todayMinutes / profile.dailyGoal) * 100));
-  const goalRemaining = Math.max(0, profile.dailyGoal - stats.todayMinutes);
+  const goalPercent = Math.min(100, Math.round((activeStats.todayMinutes / profile.dailyGoal) * 100));
+  const goalRemaining = Math.max(0, profile.dailyGoal - activeStats.todayMinutes);
   const week = Array.from({ length: 7 }, (_, index) => {
     const offset = index - 6;
-    const activity = data.dailyActivity[getDayKeyForOffset(offset)];
+    const activity = data.languageActivity[profile.targetLanguage][getDayKeyForOffset(offset)];
     return {
       offset,
       label: relativeDayLabel(offset),
@@ -53,7 +60,9 @@ export function DashboardOverview() {
     };
   });
   const maxMinutes = Math.max(profile.dailyGoal, ...week.map((day) => day.minutes), 1);
-  const recentConversations = data.conversations.slice(0, 3);
+  const recentConversations = data.conversations
+    .filter((conversation) => conversation.language === profile.targetLanguage)
+    .slice(0, 3);
   const nextContent = nextScenario.languageContent[profile.targetLanguage];
 
   return (
@@ -84,13 +93,13 @@ export function DashboardOverview() {
           <div className="goal-body">
             <div className="large-progress-ring" style={{ "--progress": `${goalPercent * 3.6}deg` } as CSSProperties}>
               <div>
-                <strong>{stats.todayMinutes}</strong>
+                <strong>{activeStats.todayMinutes}</strong>
                 <span>min</span>
               </div>
             </div>
             <div>
               <h2>{goalRemaining > 0 ? `${goalRemaining} minutes to your goal` : "Goal complete — beautiful work."}</h2>
-              <p>{stats.todayTurns} guided turn{stats.todayTurns === 1 ? "" : "s"} completed today.</p>
+              <p>{activeStats.todayTurns} guided turn{activeStats.todayTurns === 1 ? "" : "s"} completed today.</p>
               <div className="progress-track goal-track"><i style={{ width: `${goalPercent}%` }} /></div>
             </div>
           </div>
@@ -99,17 +108,17 @@ export function DashboardOverview() {
         <article className="streak-card">
           <div className="streak-icon"><Flame size={24} /></div>
           <span className="card-kicker">CURRENT STREAK</span>
-          <strong>{stats.streak}</strong>
-          <span className="streak-unit">day{stats.streak === 1 ? "" : "s"}</span>
+          <strong>{activeStats.streak}</strong>
+          <span className="streak-unit">day{activeStats.streak === 1 ? "" : "s"}</span>
           <p>Keep a tiny promise to yourself today.</p>
         </article>
 
         <article className="xp-card">
           <div className="xp-icon"><Zap size={22} /></div>
           <span className="card-kicker">TOTAL MOMENTUM</span>
-          <strong>{stats.totalXp}</strong>
+          <strong>{activeStats.totalXp}</strong>
           <span className="streak-unit">XP earned</span>
-          <p>{stats.completedConversations} scenario{stats.completedConversations === 1 ? "" : "s"} completed</p>
+          <p>{activeStats.completedConversations} scenario{activeStats.completedConversations === 1 ? "" : "s"} completed</p>
         </article>
       </section>
 

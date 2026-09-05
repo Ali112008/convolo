@@ -21,13 +21,15 @@ import { getDayKeyForOffset, relativeDayLabel } from "@/lib/learning-utils";
 import { useLearning } from "./learning-provider";
 
 export function ProgressDashboard() {
-  const { data, stats } = useLearning();
+  const { data, activeStats } = useLearning();
   const profile = data.profile;
   if (!profile) return null;
 
   const week = Array.from({ length: 7 }, (_, index) => {
     const offset = index - 6;
-    const activity = data.dailyActivity[getDayKeyForOffset(offset)] ?? { xp: 0, minutes: 0, turns: 0 };
+    const activity =
+      data.languageActivity[profile.targetLanguage][getDayKeyForOffset(offset)] ??
+      { xp: 0, minutes: 0, turns: 0 };
     return { offset, label: relativeDayLabel(offset), ...activity };
   });
   const totalWeekMinutes = week.reduce((sum, day) => sum + day.minutes, 0);
@@ -35,14 +37,17 @@ export function ProgressDashboard() {
   const maxWeekMinutes = Math.max(profile.dailyGoal, ...week.map((day) => day.minutes), 1);
   const completedScenarioIds = new Set(
     data.conversations
-      .filter((conversation) => conversation.completedAt)
+      .filter(
+        (conversation) =>
+          conversation.language === profile.targetLanguage && conversation.completedAt
+      )
       .map((conversation) => conversation.scenarioId)
   );
   const completedScenarioCount = completedScenarioIds.size;
   const targetLanguage = getLanguageLabel(profile.targetLanguage);
-  const xpMilestone = Math.ceil((stats.totalXp + 1) / 100) * 100;
-  const xpRemaining = xpMilestone - stats.totalXp;
-  const goalCompletionPercent = Math.min(100, Math.round((stats.todayMinutes / profile.dailyGoal) * 100));
+  const xpMilestone = Math.ceil((activeStats.totalXp + 1) / 100) * 100;
+  const xpRemaining = xpMilestone - activeStats.totalXp;
+  const goalCompletionPercent = Math.min(100, Math.round((activeStats.todayMinutes / profile.dailyGoal) * 100));
 
   return (
     <div className="workspace-section progress-page">
@@ -60,19 +65,19 @@ export function ProgressDashboard() {
       <section className="progress-stat-grid">
         <article className="progress-stat-card">
           <span className="progress-stat-icon stat-purple"><Flame size={21} /></span>
-          <div><span>Current streak</span><strong>{stats.streak} day{stats.streak === 1 ? "" : "s"}</strong><small>Consecutive days with practice</small></div>
+          <div><span>Current streak</span><strong>{activeStats.streak} day{activeStats.streak === 1 ? "" : "s"}</strong><small>Consecutive days with practice</small></div>
         </article>
         <article className="progress-stat-card">
           <span className="progress-stat-icon stat-blue"><Clock3 size={21} /></span>
-          <div><span>Time invested</span><strong>{stats.totalMinutes} min</strong><small>{totalWeekMinutes} minutes in the last 7 days</small></div>
+          <div><span>Time invested</span><strong>{activeStats.totalMinutes} min</strong><small>{totalWeekMinutes} minutes in the last 7 days</small></div>
         </article>
         <article className="progress-stat-card">
           <span className="progress-stat-icon stat-gold"><Zap size={21} /></span>
-          <div><span>Conversation momentum</span><strong>{stats.totalXp} XP</strong><small>{stats.totalTurns} practice turns completed</small></div>
+          <div><span>Conversation momentum</span><strong>{activeStats.totalXp} XP</strong><small>{activeStats.totalTurns} practice turns completed</small></div>
         </article>
         <article className="progress-stat-card">
           <span className="progress-stat-icon stat-mint"><BookOpenCheck size={21} /></span>
-          <div><span>Words revisited</span><strong>{stats.wordsLearned}</strong><small>Saved vocabulary reviewed</small></div>
+          <div><span>Words revisited</span><strong>{activeStats.wordsLearned}</strong><small>Saved vocabulary reviewed</small></div>
         </article>
       </section>
 
@@ -104,9 +109,9 @@ export function ProgressDashboard() {
 
         <article className="panel-card today-progress-card">
           <div className="panel-heading"><div><span className="card-kicker">TODAY&apos;S PROMISE</span><h2>Daily goal</h2></div><Target size={20} /></div>
-          <div className="goal-metric"><strong>{stats.todayMinutes}</strong><span>/ {profile.dailyGoal} min</span></div>
+          <div className="goal-metric"><strong>{activeStats.todayMinutes}</strong><span>/ {profile.dailyGoal} min</span></div>
           <div className="wide-progress-track"><i style={{ width: `${goalCompletionPercent}%` }} /></div>
-          <p>{goalCompletionPercent >= 100 ? "You kept today’s promise to yourself." : `${Math.max(0, profile.dailyGoal - stats.todayMinutes)} minutes will complete today’s goal.`}</p>
+          <p>{goalCompletionPercent >= 100 ? "You kept today’s promise to yourself." : `${Math.max(0, profile.dailyGoal - activeStats.todayMinutes)} minutes will complete today’s goal.`}</p>
           <Link className="button button-secondary button-full" href="/app/practice">Add a conversation <ArrowRight size={16} /></Link>
         </article>
       </section>
@@ -134,7 +139,7 @@ export function ProgressDashboard() {
           <div className="milestone-orbit"><span><Zap size={23} /></span></div>
           <strong>{xpRemaining} XP to {xpMilestone} XP</strong>
           <p>One thoughtful reply adds 12 XP. Review a word to keep the momentum going, too.</p>
-          <div className="milestone-progress"><i style={{ width: `${Math.min(100, (stats.totalXp / xpMilestone) * 100)}%` }} /></div>
+          <div className="milestone-progress"><i style={{ width: `${Math.min(100, (activeStats.totalXp / xpMilestone) * 100)}%` }} /></div>
         </article>
       </section>
 

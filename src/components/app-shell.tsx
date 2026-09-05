@@ -28,7 +28,7 @@ const navigation = [
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { data, hydrated, stats } = useLearning();
+  const { data, hydrated, activeStats } = useLearning();
   const [menuOpen, setMenuOpen] = useState(false);
   const profile = data.profile;
 
@@ -41,8 +41,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const progressPercent = useMemo(() => {
     if (!profile) return 0;
-    return Math.min(100, Math.round((stats.todayMinutes / profile.dailyGoal) * 100));
-  }, [profile, stats.todayMinutes]);
+    return Math.min(100, Math.round((activeStats.todayMinutes / profile.dailyGoal) * 100));
+  }, [profile, activeStats.todayMinutes]);
 
   if (!hydrated || !profile?.onboarded) {
     return <WorkspaceLoading />;
@@ -96,7 +96,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <strong>{progressPercent}%</strong>
           </div>
           <div className="progress-track"><i style={{ width: `${progressPercent}%` }} /></div>
-          <p>{stats.todayMinutes} of {profile.dailyGoal} min practiced today</p>
+          <p>{activeStats.todayMinutes} of {profile.dailyGoal} min practiced today</p>
         </div>
         <div className="sidebar-local-note">
           <span className="local-status-dot" /> Local-only mode
@@ -122,7 +122,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
           <div className="header-actions">
             <span className="header-streak" title="Current learning streak">
-              <Flame size={17} /> {stats.streak} day{stats.streak === 1 ? "" : "s"}
+              <Flame size={17} /> {activeStats.streak} day{activeStats.streak === 1 ? "" : "s"}
             </span>
             <Link className="profile-chip" href="/app/settings" aria-label="Open profile settings">
               <span className="profile-avatar">{profile.name.charAt(0).toUpperCase()}</span>

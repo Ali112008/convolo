@@ -56,12 +56,22 @@ export interface DailyActivity {
   turns: number;
 }
 
+export type LanguageActivity = Record<TargetLanguage, Record<string, DailyActivity>>;
+
+/**
+ * Version 2 keeps global history and a separate activity ledger per target
+ * language. This allows a learner to switch focus without losing or mixing
+ * language-specific goals, streaks, and charts.
+ */
 export interface LearningData {
-  version: 1;
+  version: 2;
   profile: LearningProfile | null;
   conversations: Conversation[];
   vocabulary: VocabularyWord[];
+  /** Lifetime activity across every language. */
   dailyActivity: Record<string, DailyActivity>;
+  /** Activity split by target language for the currently focused workspace. */
+  languageActivity: LanguageActivity;
   completedAchievementIds: string[];
 }
 

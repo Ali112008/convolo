@@ -6,11 +6,19 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { getScenario, getStarterVocabulary } from "@/lib/catalog";
 import {
+  createEmptyLearningData,
+  createLanguageActivity,
+  isTargetLanguage,
+  normalizeLearningData,
+} from "@/lib/learning-data";
+import {
+  calculateLanguageStats,
   calculateStats,
   dayKey,
   emptyActivity,
@@ -20,20 +28,13 @@ import type {
   LearningData,
   LearningProfile,
   ScenarioId,
+  TargetLanguage,
   TutorTurn,
 } from "@/lib/types";
 
 const STORAGE_KEY = "convolo.local-learning-data.v1";
 const XP_PER_PRACTICE_TURN = 12;
-
-const EMPTY_DATA: LearningData = {
-  version: 1,
-  profile: null,
-  conversations: [],
-  vocabulary: [],
-  dailyActivity: {},
-  completedAchievementIds: [],
-};
+const EMPTY_DATA = createEmptyLearningData();
 
 type ProfileBasics = Pick<LearningProfile, "name" | "email">;
 type OnboardingInput = ProfileBasics &
@@ -59,7 +60,10 @@ interface LearningContextValue {
   data: LearningData;
   hydrated: boolean;
   now: number;
+  /** All-time statistics across every saved language path. */
   stats: ReturnType<typeof calculateStats>;
+  /** Statistics scoped to the learner's currently selected target language. */
+  activeStats: ReturnType<typeof calculateStats>;
   prepareLearner: (input: ProfileBasics) => void;
   completeOnboarding: (input: OnboardingInput) => void;
   startDemo: () => void;
@@ -68,9 +72,14 @@ interface LearningContextValue {
       Pick<LearningProfile, "name" | "nativeLanguage" | "dailyGoal" | "level">
     >
   ) => void;
+  /** Changes the active learning path without deleting past language records. */
+  changeTargetLanguage: (language: TargetLanguage) => void;
+  /** Starts or resumes the only unfinished conversation for a language/scene pair. */
   startConversation: (scenarioId: ScenarioId) => string;
   recordPracticeTurn: (input: RecordPracticeTurnInput) => void;
   finishConversation: (conversationId: string) => void;
+  /** Removes an unfinished draft but retains earned practice time and XP. */
+  discardConversation: (conversationId: string) => void;
   addWord: (input: AddWordInput) => void;
   reviewWord: (wordId: string, rating: "again" | "good" | "easy") => void;
   resetLearningData: () => void;
@@ -80,18 +89,6 @@ const LearningContext = createContext<LearningContextValue | null>(null);
 
 function makeId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function isLearningData(value: unknown): value is LearningData {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Partial<LearningData>;
-  return (
-    candidate.version === 1 &&
-    Array.isArray(candidate.conversations) &&
-    Array.isArray(candidate.vocabulary) &&
-    typeof candidate.dailyActivity === "object" &&
-    Array.isArray(candidate.completedAchievementIds)
-  );
 }
 
 function addUniqueAchievement(
@@ -105,19 +102,51 @@ function addUniqueAchievement(
 
 function addActivity(
   data: LearningData,
+  language: TargetLanguage,
   values: { xp: number; minutes: number; turns: number }
-): LearningData["dailyActivity"] {
+): Pick<LearningData, "dailyActivity" | "languageActivity"> {
   const key = dayKey();
-  const previous = data.dailyActivity[key] ?? emptyActivity();
+  const globalPrevious = data.dailyActivity[key] ?? emptyActivity();
+  const languageLedger = data.languageActivity[language] ?? {};
+  const languagePrevious = languageLedger[key] ?? emptyActivity();
 
   return {
-    ...data.dailyActivity,
-    [key]: {
-      xp: previous.xp + values.xp,
-      minutes: previous.minutes + values.minutes,
-      turns: previous.turns + values.turns,
+    dailyActivity: {
+      ...data.dailyActivity,
+      [key]: {
+        xp: globalPrevious.xp + values.xp,
+        minutes: globalPrevious.minutes + values.minutes,
+        turns: globalPrevious.turns + values.turns,
+      },
+    },
+    languageActivity: {
+      ...data.languageActivity,
+      [language]: {
+        ...languageLedger,
+        [key]: {
+          xp: languagePrevious.xp + values.xp,
+          minutes: languagePrevious.minutes + values.minutes,
+          turns: languagePrevious.turns + values.turns,
+        },
+      },
     },
   };
+}
+
+function starterWordsMissingFrom(
+  data: LearningData,
+  language: TargetLanguage,
+  now: Date
+) {
+  const existingTerms = new Set(
+    data.vocabulary
+      .filter((word) => word.language === language)
+      .map((word) => word.term.trim().toLocaleLowerCase())
+  );
+
+  return getStarterVocabulary(language, now).filter(
+    (word) => !existingTerms.has(word.term.trim().toLocaleLowerCase())
+  );
 }
 
 function createDemoData(): LearningData {
@@ -139,14 +168,20 @@ function createDemoData(): LearningData {
     correctCount: index < 3 ? index + 1 : 0,
     lastReviewedAt: index < 3 ? now.toISOString() : undefined,
   }));
-  const demoConversationId = "demo-cafe-conversation";
+  const dailyActivity = {
+    [getDayKeyForOffset(-2)]: { xp: 24, minutes: 5, turns: 2 },
+    [getDayKeyForOffset(-1)]: { xp: 48, minutes: 9, turns: 4 },
+    [getDayKeyForOffset(0)]: { xp: 36, minutes: 7, turns: 3 },
+  };
+  const languageActivity = createLanguageActivity();
+  languageActivity.spanish = { ...dailyActivity };
 
   return {
-    version: 1,
+    version: 2,
     profile,
     conversations: [
       {
-        id: demoConversationId,
+        id: "demo-cafe-conversation",
         scenarioId: "cafe",
         scenarioTitle: cafe.title,
         language: "spanish",
@@ -178,11 +213,8 @@ function createDemoData(): LearningData {
       },
     ],
     vocabulary,
-    dailyActivity: {
-      [getDayKeyForOffset(-2)]: { xp: 24, minutes: 5, turns: 2 },
-      [getDayKeyForOffset(-1)]: { xp: 48, minutes: 9, turns: 4 },
-      [getDayKeyForOffset(0)]: { xp: 36, minutes: 7, turns: 3 },
-    },
+    dailyActivity,
+    languageActivity,
     completedAchievementIds: ["first-turn", "first-conversation", "word-collector"],
   };
 }
@@ -191,6 +223,7 @@ export function LearningProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<LearningData>(EMPTY_DATA);
   const [hydrated, setHydrated] = useState(false);
   const [now, setNow] = useState(0);
+  const createdDraftIds = useRef<Record<string, string>>({});
 
   useEffect(() => {
     const loadTimer = window.setTimeout(() => {
@@ -199,9 +232,7 @@ export function LearningProvider({ children }: { children: ReactNode }) {
         const stored = window.localStorage.getItem(STORAGE_KEY);
         if (stored) {
           const parsed: unknown = JSON.parse(stored);
-          if (isLearningData(parsed)) {
-            nextData = parsed;
-          }
+          nextData = normalizeLearningData(parsed) ?? EMPTY_DATA;
         }
       } catch {
         window.localStorage.removeItem(STORAGE_KEY);
@@ -226,7 +257,7 @@ export function LearningProvider({ children }: { children: ReactNode }) {
   }, [hydrated]);
 
   const prepareLearner = useCallback((input: ProfileBasics) => {
-    const now = new Date().toISOString();
+    const joinedAt = new Date().toISOString();
     setData((current) => ({
       ...current,
       profile: {
@@ -237,38 +268,39 @@ export function LearningProvider({ children }: { children: ReactNode }) {
         level: current.profile?.level ?? "starter",
         dailyGoal: current.profile?.dailyGoal ?? 10,
         onboarded: false,
-        joinedAt: current.profile?.joinedAt ?? now,
+        joinedAt: current.profile?.joinedAt ?? joinedAt,
       },
     }));
   }, []);
 
   const completeOnboarding = useCallback((input: OnboardingInput) => {
-    const now = new Date();
-    setNow(now.getTime());
-    setData((current) => {
-      const hasWordsForLanguage = current.vocabulary.some(
-        (word) => word.language === input.targetLanguage
-      );
-      return {
-        ...current,
-        profile: {
-          name: input.name.trim() || "Learner",
-          email: input.email.trim(),
-          nativeLanguage: input.nativeLanguage,
-          targetLanguage: input.targetLanguage,
-          level: input.level,
-          dailyGoal: input.dailyGoal,
-          onboarded: true,
-          joinedAt: current.profile?.joinedAt ?? now.toISOString(),
-        },
-        vocabulary: hasWordsForLanguage
-          ? current.vocabulary
-          : [...getStarterVocabulary(input.targetLanguage, now), ...current.vocabulary],
-      };
-    });
+    const completedAt = new Date();
+    setNow(completedAt.getTime());
+    setData((current) => ({
+      ...current,
+      profile: {
+        name: input.name.trim() || "Learner",
+        email: input.email.trim(),
+        nativeLanguage: input.nativeLanguage,
+        targetLanguage: input.targetLanguage,
+        level: input.level,
+        dailyGoal: input.dailyGoal,
+        onboarded: true,
+        joinedAt: current.profile?.joinedAt ?? completedAt.toISOString(),
+      },
+      vocabulary: [
+        ...starterWordsMissingFrom(current, input.targetLanguage, completedAt),
+        ...current.vocabulary,
+      ],
+      languageActivity: {
+        ...current.languageActivity,
+        [input.targetLanguage]: current.languageActivity[input.targetLanguage] ?? {},
+      },
+    }));
   }, []);
 
   const startDemo = useCallback(() => {
+    createdDraftIds.current = {};
     setData(createDemoData());
     setNow(Date.now());
   }, []);
@@ -290,11 +322,49 @@ export function LearningProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  const changeTargetLanguage = useCallback((language: TargetLanguage) => {
+    if (!isTargetLanguage(language)) return;
+    const switchedAt = new Date();
+    setNow(switchedAt.getTime());
+
+    setData((current) => {
+      if (!current.profile || current.profile.targetLanguage === language) {
+        return current;
+      }
+
+      return {
+        ...current,
+        profile: { ...current.profile, targetLanguage: language },
+        vocabulary: [
+          ...starterWordsMissingFrom(current, language, switchedAt),
+          ...current.vocabulary,
+        ],
+        languageActivity: {
+          ...current.languageActivity,
+          [language]: current.languageActivity[language] ?? {},
+        },
+      };
+    });
+  }, []);
+
   const startConversation = useCallback(
     (scenarioId: ScenarioId) => {
-      const conversationId = makeId("conversation");
-      const now = new Date().toISOString();
       const language = data.profile?.targetLanguage ?? "spanish";
+      const draftKey = `${language}:${scenarioId}`;
+      const existingDraft = data.conversations.find(
+        (conversation) =>
+          !conversation.completedAt &&
+          conversation.language === language &&
+          conversation.scenarioId === scenarioId
+      );
+      if (existingDraft) return existingDraft.id;
+
+      const optimisticDraftId = createdDraftIds.current[draftKey];
+      if (optimisticDraftId) return optimisticDraftId;
+
+      const conversationId = makeId("conversation");
+      createdDraftIds.current[draftKey] = conversationId;
+      const startedAt = new Date().toISOString();
       const scenario = getScenario(scenarioId);
       const opening = scenario.languageContent[language];
 
@@ -306,7 +376,7 @@ export function LearningProvider({ children }: { children: ReactNode }) {
             scenarioId,
             scenarioTitle: scenario.title,
             language,
-            startedAt: now,
+            startedAt,
             xpEarned: 0,
             messages: [
               {
@@ -314,7 +384,7 @@ export function LearningProvider({ children }: { children: ReactNode }) {
                 role: "tutor",
                 text: opening.opening,
                 translation: opening.openingTranslation,
-                createdAt: now,
+                createdAt: startedAt,
               },
             ],
           },
@@ -324,37 +394,37 @@ export function LearningProvider({ children }: { children: ReactNode }) {
 
       return conversationId;
     },
-    [data.profile?.targetLanguage]
+    [data.conversations, data.profile?.targetLanguage]
   );
 
   const recordPracticeTurn = useCallback((input: RecordPracticeTurnInput) => {
-    const now = new Date().toISOString();
-    setNow(new Date(now).getTime());
+    const recordedAt = new Date().toISOString();
+    setNow(new Date(recordedAt).getTime());
     setData((current) => {
       const conversation = current.conversations.find(
-        (item) => item.id === input.conversationId
-      );
-      if (!conversation) return current;
+        (item) => item.id === input.conversationId);
+      if (!conversation || conversation.completedAt) return current;
 
-      const wordId = makeId(`practice-${conversation.language}`);
       const alreadySaved = current.vocabulary.some(
-        (word) => word.term.toLowerCase() === input.tutorTurn.vocabulary.term.toLowerCase()
+        (word) =>
+          word.language === conversation.language &&
+          word.term.toLocaleLowerCase() ===
+            input.tutorTurn.vocabulary.term.toLocaleLowerCase()
       );
       const updatedWords = alreadySaved
         ? current.vocabulary
         : [
             {
-              id: wordId,
+              id: makeId(`practice-${conversation.language}`),
               language: conversation.language,
               ...input.tutorTurn.vocabulary,
               source: "practice" as const,
-              createdAt: now,
-              nextReviewAt: now,
+              createdAt: recordedAt,
+              nextReviewAt: recordedAt,
               correctCount: 0,
             },
             ...current.vocabulary,
           ];
-
       const updatedConversations = current.conversations.map((item) =>
         item.id === input.conversationId
           ? {
@@ -366,19 +436,24 @@ export function LearningProvider({ children }: { children: ReactNode }) {
                   id: makeId("message"),
                   role: "learner" as const,
                   text: input.learnerText,
-                  createdAt: now,
+                  createdAt: recordedAt,
                 },
                 {
                   id: makeId("message"),
                   role: "tutor" as const,
                   text: input.tutorTurn.reply,
                   translation: input.tutorTurn.translation,
-                  createdAt: now,
+                  createdAt: recordedAt,
                 },
               ],
             }
           : item
       );
+      const activity = addActivity(current, conversation.language, {
+        xp: XP_PER_PRACTICE_TURN,
+        minutes: 2,
+        turns: 1,
+      });
       let achievementIds = addUniqueAchievement(
         current.completedAchievementIds,
         "first-turn"
@@ -389,43 +464,79 @@ export function LearningProvider({ children }: { children: ReactNode }) {
 
       return {
         ...current,
+        ...activity,
         conversations: updatedConversations,
         vocabulary: updatedWords,
-        dailyActivity: addActivity(current, {
-          xp: XP_PER_PRACTICE_TURN,
-          minutes: 2,
-          turns: 1,
-        }),
         completedAchievementIds: achievementIds,
       };
     });
   }, []);
 
   const finishConversation = useCallback((conversationId: string) => {
-    const now = new Date().toISOString();
-    setData((current) => ({
-      ...current,
-      conversations: current.conversations.map((conversation) =>
-        conversation.id === conversationId && !conversation.completedAt
-          ? { ...conversation, completedAt: now }
-          : conversation
-      ),
-      completedAchievementIds: addUniqueAchievement(
-        current.completedAchievementIds,
-        "first-conversation"
-      ),
-    }));
-  }, []);
+    const knownConversation = data.conversations.find(
+      (conversation) => conversation.id === conversationId
+    );
+    if (knownConversation) {
+      delete createdDraftIds.current[
+        `${knownConversation.language}:${knownConversation.scenarioId}`
+      ];
+    }
+    const completedAt = new Date().toISOString();
+    setData((current) => {
+      const conversation = current.conversations.find(
+        (item) => item.id === conversationId
+      );
+      if (!conversation || conversation.completedAt) return current;
+
+      return {
+        ...current,
+        conversations: current.conversations.map((item) =>
+          item.id === conversationId ? { ...item, completedAt } : item
+        ),
+        completedAchievementIds: addUniqueAchievement(
+          current.completedAchievementIds,
+          "first-conversation"
+        ),
+      };
+    });
+  }, [data.conversations]);
+
+  const discardConversation = useCallback((conversationId: string) => {
+    const knownConversation = data.conversations.find(
+      (conversation) => conversation.id === conversationId
+    );
+    if (knownConversation) {
+      delete createdDraftIds.current[
+        `${knownConversation.language}:${knownConversation.scenarioId}`
+      ];
+    }
+    setData((current) => {
+      const conversation = current.conversations.find(
+        (item) => item.id === conversationId
+      );
+      if (!conversation || conversation.completedAt) return current;
+      return {
+        ...current,
+        conversations: current.conversations.filter(
+          (item) => item.id !== conversationId
+        ),
+      };
+    });
+  }, [data.conversations]);
 
   const addWord = useCallback((input: AddWordInput) => {
-    const now = new Date().toISOString();
-    setNow(new Date(now).getTime());
+    const createdAt = new Date().toISOString();
+    setNow(new Date(createdAt).getTime());
     setData((current) => {
       const language = current.profile?.targetLanguage ?? "spanish";
+      const term = input.term.trim();
+      const translation = input.translation.trim();
       const duplicate = current.vocabulary.some(
-        (word) => word.term.toLowerCase() === input.term.trim().toLowerCase()
+        (word) =>
+          word.language === language &&
+          word.term.toLocaleLowerCase() === term.toLocaleLowerCase()
       );
-      if (duplicate || !input.term.trim() || !input.translation.trim()) return current;
+      if (duplicate || !term || !translation) return current;
 
       return {
         ...current,
@@ -433,13 +544,13 @@ export function LearningProvider({ children }: { children: ReactNode }) {
           {
             id: makeId("manual-word"),
             language,
-            term: input.term.trim(),
-            translation: input.translation.trim(),
-            example: input.example.trim() || input.term.trim(),
+            term,
+            translation,
+            example: input.example.trim() || term,
             notes: input.notes?.trim(),
             source: "manual",
-            createdAt: now,
-            nextReviewAt: now,
+            createdAt,
+            nextReviewAt: createdAt,
             correctCount: 0,
           },
           ...current.vocabulary,
@@ -450,9 +561,9 @@ export function LearningProvider({ children }: { children: ReactNode }) {
 
   const reviewWord = useCallback(
     (wordId: string, rating: "again" | "good" | "easy") => {
-      const now = new Date();
-      setNow(now.getTime());
-      const nextReview = new Date(now);
+      const reviewedAt = new Date();
+      setNow(reviewedAt.getTime());
+      const nextReview = new Date(reviewedAt);
       if (rating === "again") {
         nextReview.setMinutes(nextReview.getMinutes() + 10);
       } else {
@@ -460,56 +571,77 @@ export function LearningProvider({ children }: { children: ReactNode }) {
         nextReview.setDate(nextReview.getDate() + intervals[rating]);
       }
 
-      setData((current) => ({
-        ...current,
-        vocabulary: current.vocabulary.map((word) =>
-          word.id === wordId
-            ? {
-                ...word,
-                correctCount:
-                  rating === "again" ? word.correctCount : word.correctCount + 1,
-                lastReviewedAt: now.toISOString(),
-                nextReviewAt: nextReview.toISOString(),
-              }
-            : word
-        ),
-        dailyActivity: addActivity(current, {
+      setData((current) => {
+        const reviewedWord = current.vocabulary.find((word) => word.id === wordId);
+        if (!reviewedWord) return current;
+        const activity = addActivity(current, reviewedWord.language, {
           xp: rating === "easy" ? 8 : 5,
           minutes: 1,
           turns: 0,
-        }),
-      }));
+        });
+
+        return {
+          ...current,
+          ...activity,
+          vocabulary: current.vocabulary.map((word) =>
+            word.id === wordId
+              ? {
+                  ...word,
+                  correctCount:
+                    rating === "again" ? word.correctCount : word.correctCount + 1,
+                  lastReviewedAt: reviewedAt.toISOString(),
+                  nextReviewAt: nextReview.toISOString(),
+                }
+              : word
+          ),
+        };
+      });
     },
     []
   );
 
   const resetLearningData = useCallback(() => {
     window.localStorage.removeItem(STORAGE_KEY);
-    setData(EMPTY_DATA);
+    createdDraftIds.current = {};
+    setData(createEmptyLearningData());
+    setNow(Date.now());
   }, []);
 
   const stats = useMemo(() => calculateStats(data), [data]);
+  const activeStats = useMemo(
+    () =>
+      data.profile
+        ? calculateLanguageStats(data, data.profile.targetLanguage)
+        : calculateStats(EMPTY_DATA),
+    [data]
+  );
   const value = useMemo<LearningContextValue>(
     () => ({
       data,
       hydrated,
       now,
       stats,
+      activeStats,
       prepareLearner,
       completeOnboarding,
       startDemo,
       updateProfile,
+      changeTargetLanguage,
       startConversation,
       recordPracticeTurn,
       finishConversation,
+      discardConversation,
       addWord,
       reviewWord,
       resetLearningData,
     }),
     [
+      activeStats,
       addWord,
+      changeTargetLanguage,
       completeOnboarding,
       data,
+      discardConversation,
       finishConversation,
       hydrated,
       now,
