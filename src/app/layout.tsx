@@ -1,35 +1,26 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+import { LearningProvider } from "@/components/learning-provider";
 
 export const metadata: Metadata = {
-  title: "Convolo — Conversation, Unlocked.",
+  title: {
+    default: "Convolo — Conversation, unlocked.",
+    template: "%s · Convolo",
+  },
   description:
-    "Master any language through real conversations with AI. Practice speaking, get instant corrections, and build fluency naturally with Convolo.",
+    "A local-first language-learning MVP for guided conversations, vocabulary review, and progress tracking.",
+  applicationName: "Convolo",
 };
 
 export default function RootLayout({
   children,
-}: {
+}: Readonly<{
   children: React.ReactNode;
-}) {
+}>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased overflow-x-hidden`}
-    >
-      <body className="min-h-full flex flex-col bg-background text-foreground">
-        {children}
+    <html lang="en">
+      <body>
+        <LearningProvider>{children}</LearningProvider>
       </body>
     </html>
   );

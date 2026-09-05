@@ -1,36 +1,91 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Convolo — local-first language-learning MVP
 
-## Getting Started
+Convolo is a complete, self-contained language-learning MVP built with Next.js. It replaces the original static landing page with an interactive learning workspace that works without a database, API key, authentication provider, or payment service.
 
-First, run the development server:
+> **Important:** this is intentionally a local-first MVP, not a pretend production AI service. Tutor responses are deterministic guided prompts that run in the browser. Learner data is saved to browser `localStorage` only.
+
+## What works
+
+- A polished responsive landing page with working navigation and legal pages
+- Local profile setup: native language, target language, learning level, and daily goal
+- A demo workspace that can be opened immediately
+- Four target-language paths: Spanish, French, German, and Japanese
+- Four interactive guided scenarios: café, introductions, directions, and hotel check-in
+- Local tutor replies, translations, phrase suggestions, vocabulary extraction, and browser text-to-speech controls
+- Saved vocabulary with search, filters, custom words, and a simple spaced-review queue
+- Persisted XP, practice minutes, turns, streaks, scenario milestones, weekly charts, and daily goals
+- Profile preferences, downloadable JSON data export, and full local-data reset
+- Privacy and terms pages that accurately describe the local-only data model
+
+## Running locally
 
 ```bash
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+For an externally accessible development preview, bind Next to all interfaces:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run dev -- --hostname 0.0.0.0
+```
 
-## Learn More
+## Quality checks
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run lint
+npm run typecheck
+npm run build
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The production build does not fetch a Google font or depend on any other remote resource, so it can run in an offline/restricted build environment.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Routes
 
-## Deploy on Vercel
+| Route | Purpose |
+| --- | --- |
+| `/` | Product landing page |
+| `/login` | Local-profile entry point and demo launcher |
+| `/onboarding` | Three-step learning setup |
+| `/app` | Learning overview dashboard |
+| `/app/practice` | Guided conversation studio |
+| `/app/vocabulary` | Vocabulary library and review queue |
+| `/app/progress` | Progress charts and milestones |
+| `/app/settings` | Preferences, export, and reset controls |
+| `/privacy` | Local-data privacy notice |
+| `/terms` | MVP usage terms |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Architecture
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```text
+src/
+├── app/                 # App Router routes and global styles
+├── components/          # Workspace, onboarding, practice, vocabulary and UI components
+└── lib/
+    ├── catalog.ts       # Language/scenario content and local tutor guidance
+    ├── learning-utils.ts# Date, streak, and statistics utilities
+    └── types.ts         # Shared data types
+```
+
+`src/components/learning-provider.tsx` is the client-side state boundary. It validates and loads local data after hydration, persists every learning action to `localStorage`, and exposes actions to the rest of the interface.
+
+## Local data and privacy
+
+The browser key is `convolo.local-learning-data.v1`. It contains the display name/email supplied during setup, selected learning preferences, conversations, vocabulary, and activity metrics. Nothing in the learning flow sends these records to an API.
+
+Use **Settings → Export JSON** before clearing browser storage or resetting the workspace.
+
+## Moving toward production
+
+To evolve this MVP into a hosted product, add these server-side pieces rather than exposing credentials in browser code:
+
+1. Authentication and durable storage (for example, Supabase Auth + Postgres).
+2. A protected Next.js route handler/server action that calls an AI provider using a server-only environment variable.
+3. Input moderation, rate limiting, audit logging, and proper error handling around the AI route.
+4. Cloud sync and migration from the local data schema.
+5. A billing provider and webhook-backed subscription state if paid plans are required.
+6. Updated privacy policy, terms, consent, and data-retention controls before collecting cloud data.
+
+The current local provider keeps these boundaries explicit, making it possible to replace persistence and tutor actions incrementally.
