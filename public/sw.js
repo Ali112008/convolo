@@ -1,5 +1,7 @@
 /* Convolo PWA shell and best-effort local reminder worker. */
-const CACHE_NAME = "convolo-shell-v1";
+// Bump this whenever the shell behavior changes so an installed PWA cannot
+// continue serving an older client bundle after a deployment.
+const CACHE_NAME = "convolo-shell-v2";
 const APP_SHELL = [
   "/",
   "/app",
