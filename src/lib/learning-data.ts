@@ -3,6 +3,8 @@ import type {
   ConversationMessage,
   DailyActivity,
   LanguageActivity,
+  LanguageLearningPreferences,
+  LanguagePreferences,
   LearningData,
   LearningLevel,
   LearningProfile,
@@ -34,6 +36,10 @@ const SCENARIO_IDS: readonly ScenarioId[] = [
 
 const EMPTY_DATE = "1970-01-01T00:00:00.000Z";
 const MAX_ACTIVITY_DAYS = 3_660;
+const DEFAULT_LANGUAGE_PREFERENCES: LanguageLearningPreferences = {
+  level: "starter",
+  dailyGoal: 10,
+};
 
 export function isTargetLanguage(value: unknown): value is TargetLanguage {
   return (
@@ -76,14 +82,27 @@ function boundedNumber(value: unknown, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.round(value)));
 }
 
+function isValidDailyGoal(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= 180
+  );
+}
+
+function normalizeDailyGoal(value: unknown): number {
+  return boundedNumber(
+    typeof value === "number" && Number.isFinite(value) ? value : 10,
+    1,
+    180
+  );
+}
+
 function normalizeProfile(value: unknown): LearningProfile | null {
   if (value === null || value === undefined) return null;
   if (!isRecord(value) || !isTargetLanguage(value.targetLanguage)) return null;
-
-  const storedGoal =
-    typeof value.dailyGoal === "number" && Number.isFinite(value.dailyGoal)
-      ? value.dailyGoal
-      : 10;
 
   return {
     name: text(value.name, 40, "Learner") || "Learner",
@@ -91,7 +110,7 @@ function normalizeProfile(value: unknown): LearningProfile | null {
     nativeLanguage: text(value.nativeLanguage, 60, "Arabic") || "Arabic",
     targetLanguage: value.targetLanguage,
     level: isLearningLevel(value.level) ? value.level : "starter",
-    dailyGoal: boundedNumber(storedGoal, 1, 180),
+    dailyGoal: normalizeDailyGoal(value.dailyGoal),
     onboarded: value.onboarded === true,
     joinedAt: timestamp(value.joinedAt),
   };
@@ -211,12 +230,38 @@ export function createLanguageActivity(): LanguageActivity {
   };
 }
 
+export function createLanguagePreferences(): LanguagePreferences {
+  return {
+    spanish: { ...DEFAULT_LANGUAGE_PREFERENCES },
+    french: { ...DEFAULT_LANGUAGE_PREFERENCES },
+    german: { ...DEFAULT_LANGUAGE_PREFERENCES },
+    japanese: { ...DEFAULT_LANGUAGE_PREFERENCES },
+  };
+}
+
 function normalizeLanguageActivity(value: unknown): LanguageActivity {
   const normalized = createLanguageActivity();
   if (!isRecord(value)) return normalized;
 
   TARGET_LANGUAGE_IDS.forEach((language) => {
     normalized[language] = normalizeDailyActivity(value[language]);
+  });
+  return normalized;
+}
+
+function normalizeLanguagePreferences(value: unknown): LanguagePreferences {
+  const normalized = createLanguagePreferences();
+  if (!isRecord(value)) return normalized;
+
+  TARGET_LANGUAGE_IDS.forEach((language) => {
+    const preferences = value[language];
+    if (!isRecord(preferences)) return;
+    normalized[language] = {
+      level: isLearningLevel(preferences.level)
+        ? preferences.level
+        : DEFAULT_LANGUAGE_PREFERENCES.level,
+      dailyGoal: normalizeDailyGoal(preferences.dailyGoal),
+    };
   });
   return normalized;
 }
@@ -237,28 +282,29 @@ function normalizedAchievements(value: unknown): string[] {
 
 export function createEmptyLearningData(): LearningData {
   return {
-    version: 2,
+    version: 3,
     profile: null,
     conversations: [],
     vocabulary: [],
     dailyActivity: {},
     languageActivity: createLanguageActivity(),
+    languagePreferences: createLanguagePreferences(),
     completedAchievementIds: [],
   };
 }
 
 /**
- * Accepts the old V1 browser format and upgrades it without discarding a
- * learner's records. Old activity is assigned to the target language that was
- * active at the time it was stored. Invalid/tampered localStorage data is
- * reduced to safe values instead of being allowed to break the UI.
+ * Accepts V1/V2 browser formats and upgrades them without discarding a
+ * learner's records. Old activity and preferences are assigned to the target
+ * language that was active when they were saved. Invalid/tampered localStorage
+ * values are reduced to safe values instead of being allowed to break the UI.
  */
 export function normalizeLearningData(value: unknown): LearningData | null {
-  if (!isRecord(value) || (value.version !== 1 && value.version !== 2)) {
+  if (!isRecord(value) || (value.version !== 1 && value.version !== 2 && value.version !== 3)) {
     return null;
   }
 
-  const profile = normalizeProfile(value.profile);
+  let profile = normalizeProfile(value.profile);
   const conversations = Array.isArray(value.conversations)
     ? deduplicateById(
         value.conversations
@@ -277,12 +323,14 @@ export function normalizeLearningData(value: unknown): LearningData | null {
     : [];
   const dailyActivity = normalizeDailyActivity(value.dailyActivity);
   const languageActivity =
-    value.version === 2
-      ? normalizeLanguageActivity(value.languageActivity)
-      : createLanguageActivity();
+    value.version === 1
+      ? createLanguageActivity()
+      : normalizeLanguageActivity(value.languageActivity);
+  const languagePreferences =
+    value.version === 3
+      ? normalizeLanguagePreferences(value.languagePreferences)
+      : createLanguagePreferences();
 
-  // V1 had a single activity ledger. Preserve it under the formerly selected
-  // language rather than accidentally applying it to every future language.
   if (profile && !hasActivity(languageActivity[profile.targetLanguage]) && hasActivity(dailyActivity)) {
     const noLanguageLedgerExists = TARGET_LANGUAGE_IDS.every(
       (language) => !hasActivity(languageActivity[language])
@@ -292,13 +340,49 @@ export function normalizeLearningData(value: unknown): LearningData | null {
     }
   }
 
+  if (profile) {
+    const rawLanguagePreferences = isRecord(value.languagePreferences)
+      ? value.languagePreferences
+      : null;
+    const possibleCurrentPreferences = rawLanguagePreferences?.[profile.targetLanguage];
+    const rawCurrentPreferences: Record<string, unknown> | null = isRecord(
+      possibleCurrentPreferences
+    )
+      ? possibleCurrentPreferences
+      : null;
+    const storedPreferencesForCurrentLanguage =
+      value.version === 3 &&
+      rawCurrentPreferences !== null &&
+      isLearningLevel(rawCurrentPreferences.level) &&
+      isValidDailyGoal(rawCurrentPreferences.dailyGoal);
+
+    // V1/V2 had one profile-level goal and level. Migrate them to the path that
+    // was active. For a malformed V3 payload lacking current settings, do the
+    // same instead of unexpectedly changing the learner's visible preferences.
+    if (value.version !== 3 || !storedPreferencesForCurrentLanguage) {
+      languagePreferences[profile.targetLanguage] = {
+        level: profile.level,
+        dailyGoal: profile.dailyGoal,
+      };
+    }
+
+    // In V3 the path preference is authoritative. The profile mirrors it so
+    // existing UI consumers remain simple and cannot display stale settings.
+    profile = {
+      ...profile,
+      level: languagePreferences[profile.targetLanguage].level,
+      dailyGoal: languagePreferences[profile.targetLanguage].dailyGoal,
+    };
+  }
+
   return {
-    version: 2,
+    version: 3,
     profile,
     conversations,
     vocabulary,
     dailyActivity,
     languageActivity,
+    languagePreferences,
     completedAchievementIds: normalizedAchievements(value.completedAchievementIds),
   };
 }

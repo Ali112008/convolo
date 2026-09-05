@@ -67,7 +67,7 @@ src/
 ├── components/          # Workspace, onboarding, practice, vocabulary and UI components
 └── lib/
     ├── catalog.ts       # Language/scenario content and local tutor guidance
-    ├── learning-data.ts # V1→V2 local-data migration and defensive validation
+    ├── learning-data.ts # V1/V2→V3 local-data migration and defensive validation
     ├── learning-utils.ts# Date, streak, and statistics utilities
     └── types.ts         # Shared data types
 scripts/
@@ -78,9 +78,9 @@ scripts/
 
 ## Local data and privacy
 
-The browser key remains `convolo.local-learning-data.v1`; the stored schema is now **V2**. It contains the display name/email supplied during setup, selected learning preferences, conversations, vocabulary, a lifetime activity ledger, and a separate ledger for each target language. Existing V1 data is migrated safely on load: its prior activity is assigned to the language that was active when it was saved.
+The browser key remains `convolo.local-learning-data.v1`; the stored schema is now **V3**. It contains the display name/email supplied during setup, selected learning preferences, conversations, vocabulary, a lifetime activity ledger, and separate activity and level/goal preferences for each target language. Existing V1 and V2 data is migrated safely on load: prior activity and preferences are assigned to the language that was active when they were saved.
 
-Switching target language does **not** wipe or merge records. Convolo preserves the old language path, adds only missing starter phrases for the new path, and keeps unfinished conversations as drafts that can be resumed after switching back. Use **Settings → Export JSON** before clearing browser storage or resetting the workspace.
+Switching target language does **not** wipe or merge records. Convolo preserves the old language path, its level and daily goal, vocabulary, conversations, and unfinished drafts. It adds only missing starter phrases for the new path, and drafts can be resumed after switching back. Use **Settings → Export JSON** before clearing browser storage or resetting the workspace.
 
 ## Moving toward production
 

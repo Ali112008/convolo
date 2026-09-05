@@ -61,6 +61,12 @@ export function SettingsPanel() {
     (language) => language.id === targetLanguageCandidate
   );
   const hasTargetLanguageChange = targetLanguageCandidate !== profile.targetLanguage;
+  const hasUnsavedProfileChanges =
+    name.trim() !== profile.name ||
+    nativeLanguage !== profile.nativeLanguage ||
+    level !== profile.level ||
+    dailyGoal !== profile.dailyGoal;
+  const candidatePreferences = data.languagePreferences[targetLanguageCandidate];
   const currentLanguageConversations = data.conversations.filter(
     (conversation) => conversation.language === profile.targetLanguage
   ).length;
@@ -87,7 +93,16 @@ export function SettingsPanel() {
   }
 
   function confirmLanguageChange() {
-    if (!hasTargetLanguageChange) return;
+    if (!profile || !hasTargetLanguageChange) return;
+    // The form state belongs to the visible language path. Reset it before the
+    // render changes paths so a later "Save preferences" cannot accidentally
+    // copy the old language's level or goal into the newly selected path. The
+    // explicit confirmation also discards any other unsaved form edits.
+    setName(profile.name);
+    setNativeLanguage(profile.nativeLanguage);
+    setLevel(candidatePreferences.level);
+    setDailyGoal(candidatePreferences.dailyGoal);
+    setSaved(false);
     changeTargetLanguage(targetLanguageCandidate);
     setConfirmingLanguageChange(false);
     setLanguageChanged(true);
@@ -174,7 +189,7 @@ export function SettingsPanel() {
           <article className="settings-card language-switch-card">
             <div className="settings-card-heading">
               <span className="settings-card-icon settings-card-icon-blue"><Globe2 size={20} /></span>
-              <div><h2>Switch learning language</h2><p>Change your active path without erasing the language you already studied.</p></div>
+              <div><h2>Switch learning language</h2><p>Change your active study path—not the site interface—without erasing the language you already studied.</p></div>
             </div>
             <div className="language-switch-grid">
               <div className="active-language-summary">
@@ -211,12 +226,16 @@ export function SettingsPanel() {
                     <p>
                       Nothing will be deleted. {currentLanguageWords} saved word{currentLanguageWords === 1 ? "" : "s"} and {currentLanguageConversations} conversation{currentLanguageConversations === 1 ? "" : "s"} stay under {currentLanguage?.label}. Missing {nextLanguage?.label} starter phrases are added once, never duplicated.
                     </p>
+                    <p>
+                      {nextLanguage?.label} will use its own saved {candidatePreferences.level} level and {candidatePreferences.dailyGoal}-minute daily goal. Returning here restores this path&apos;s level and goal.
+                    </p>
+                    {hasUnsavedProfileChanges && <small>Unsaved profile edits are not carried to another language path. Save them first, or explicitly switch without saving them.</small>}
                     {currentLanguageDrafts > 0 && <small>{currentLanguageDrafts} unfinished {currentLanguage?.label} scene{currentLanguageDrafts === 1 ? " is" : "s are"} saved as a draft and can be resumed when you return.</small>}
                   </div>
                 </div>
                 <div className="language-switch-confirmation-actions">
                   <button className="button button-ghost" type="button" onClick={() => setConfirmingLanguageChange(false)}>Keep {currentLanguage?.label}</button>
-                  <button className="button button-primary" type="button" onClick={confirmLanguageChange}>Switch to {nextLanguage?.label} <ArrowRight size={17} /></button>
+                  <button className="button button-primary" type="button" onClick={confirmLanguageChange}>{hasUnsavedProfileChanges ? "Switch without saving edits" : `Switch to ${nextLanguage?.label}`} <ArrowRight size={17} /></button>
                 </div>
               </div>
             )}

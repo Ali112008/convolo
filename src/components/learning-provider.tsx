@@ -14,6 +14,7 @@ import { getScenario, getStarterVocabulary } from "@/lib/catalog";
 import {
   createEmptyLearningData,
   createLanguageActivity,
+  createLanguagePreferences,
   isTargetLanguage,
   normalizeLearningData,
 } from "@/lib/learning-data";
@@ -175,9 +176,11 @@ function createDemoData(): LearningData {
   };
   const languageActivity = createLanguageActivity();
   languageActivity.spanish = { ...dailyActivity };
+  const languagePreferences = createLanguagePreferences();
+  languagePreferences.spanish = { level: "beginner", dailyGoal: 10 };
 
   return {
-    version: 2,
+    version: 3,
     profile,
     conversations: [
       {
@@ -215,6 +218,7 @@ function createDemoData(): LearningData {
     vocabulary,
     dailyActivity,
     languageActivity,
+    languagePreferences,
     completedAchievementIds: ["first-turn", "first-conversation", "word-collector"],
   };
 }
@@ -296,6 +300,13 @@ export function LearningProvider({ children }: { children: ReactNode }) {
         ...current.languageActivity,
         [input.targetLanguage]: current.languageActivity[input.targetLanguage] ?? {},
       },
+      languagePreferences: {
+        ...current.languagePreferences,
+        [input.targetLanguage]: {
+          level: input.level,
+          dailyGoal: input.dailyGoal,
+        },
+      },
     }));
   }, []);
 
@@ -313,9 +324,28 @@ export function LearningProvider({ children }: { children: ReactNode }) {
     ) => {
       setData((current) => {
         if (!current.profile) return current;
+        const activeLanguage = current.profile.targetLanguage;
+        const activePreferences = current.languagePreferences[activeLanguage] ?? {
+          level: current.profile.level,
+          dailyGoal: current.profile.dailyGoal,
+        };
+        const nextPreferences = {
+          level: updates.level ?? activePreferences.level,
+          dailyGoal: updates.dailyGoal ?? activePreferences.dailyGoal,
+        };
+
         return {
           ...current,
-          profile: { ...current.profile, ...updates },
+          profile: {
+            ...current.profile,
+            ...updates,
+            level: nextPreferences.level,
+            dailyGoal: nextPreferences.dailyGoal,
+          },
+          languagePreferences: {
+            ...current.languagePreferences,
+            [activeLanguage]: nextPreferences,
+          },
         };
       });
     },
@@ -332,9 +362,19 @@ export function LearningProvider({ children }: { children: ReactNode }) {
         return current;
       }
 
+      const nextPreferences = current.languagePreferences[language] ?? {
+        level: "starter" as const,
+        dailyGoal: 10,
+      };
+
       return {
         ...current,
-        profile: { ...current.profile, targetLanguage: language },
+        profile: {
+          ...current.profile,
+          targetLanguage: language,
+          level: nextPreferences.level,
+          dailyGoal: nextPreferences.dailyGoal,
+        },
         vocabulary: [
           ...starterWordsMissingFrom(current, language, switchedAt),
           ...current.vocabulary,
@@ -342,6 +382,10 @@ export function LearningProvider({ children }: { children: ReactNode }) {
         languageActivity: {
           ...current.languageActivity,
           [language]: current.languageActivity[language] ?? {},
+        },
+        languagePreferences: {
+          ...current.languagePreferences,
+          [language]: nextPreferences,
         },
       };
     });

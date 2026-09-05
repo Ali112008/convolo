@@ -48,7 +48,7 @@ try {
     joinedAt: "2026-09-05T10:00:00.000Z",
   };
 
-  test("migrates V1 activity into the previously active language", () => {
+  test("migrates V1 activity and path preferences into the prior target language", () => {
     const legacyData = {
       version: 1,
       profile: legacyProfile,
@@ -62,28 +62,94 @@ try {
 
     const migrated = normalizeLearningData(legacyData);
     assert.ok(migrated);
-    assert.equal(migrated.version, 2);
+    assert.equal(migrated.version, 3);
     assert.deepEqual(migrated.languageActivity.spanish, legacyData.dailyActivity);
     assert.deepEqual(migrated.languageActivity.french, {});
+    assert.deepEqual(migrated.languagePreferences.spanish, {
+      level: "beginner",
+      dailyGoal: 10,
+    });
   });
 
-  test("preserves separate language ledgers in V2", () => {
+  test("migrates V2 ledgers while retaining each language's historical activity", () => {
+    const v2Data = {
+      version: 2,
+      profile: { ...legacyProfile, targetLanguage: "french", level: "intermediate", dailyGoal: 15 },
+      conversations: [],
+      vocabulary: [],
+      dailyActivity: {
+        "2026-09-05": { xp: 36, minutes: 6, turns: 3 },
+      },
+      languageActivity: {
+        spanish: { "2026-09-04": { xp: 24, minutes: 4, turns: 2 } },
+        french: { "2026-09-05": { xp: 12, minutes: 2, turns: 1 } },
+        german: {},
+        japanese: {},
+      },
+      completedAchievementIds: [],
+    };
+
+    const migrated = normalizeLearningData(v2Data);
+    assert.ok(migrated);
+    assert.equal(migrated.version, 3);
+    assert.deepEqual(migrated.languageActivity.french, v2Data.languageActivity.french);
+    assert.deepEqual(migrated.languageActivity.spanish, v2Data.languageActivity.spanish);
+    assert.deepEqual(migrated.languagePreferences.french, {
+      level: "intermediate",
+      dailyGoal: 15,
+    });
+  });
+
+  test("preserves separate V3 language preferences and synchronizes the active profile", () => {
     const data = createEmptyLearningData();
-    data.profile = { ...legacyProfile, targetLanguage: "french" };
-    data.dailyActivity = {
-      "2026-09-05": { xp: 36, minutes: 6, turns: 3 },
-    };
-    data.languageActivity.french = {
-      "2026-09-05": { xp: 12, minutes: 2, turns: 1 },
-    };
-    data.languageActivity.spanish = {
-      "2026-09-04": { xp: 24, minutes: 4, turns: 2 },
-    };
+    data.profile = { ...legacyProfile, targetLanguage: "french", level: "starter", dailyGoal: 5 };
+    data.languagePreferences.french = { level: "advanced", dailyGoal: 20 };
+    data.languagePreferences.spanish = { level: "beginner", dailyGoal: 10 };
 
     const normalized = normalizeLearningData(data);
     assert.ok(normalized);
-    assert.deepEqual(normalized.languageActivity.french, data.languageActivity.french);
-    assert.deepEqual(normalized.languageActivity.spanish, data.languageActivity.spanish);
+    assert.deepEqual(normalized.languagePreferences.french, {
+      level: "advanced",
+      dailyGoal: 20,
+    });
+    assert.equal(normalized.profile.level, "advanced");
+    assert.equal(normalized.profile.dailyGoal, 20);
+  });
+
+  test("uses visible profile settings if V3 active-path preferences are missing or malformed", () => {
+    const malformed = createEmptyLearningData();
+    malformed.profile = {
+      ...legacyProfile,
+      targetLanguage: "japanese",
+      level: "advanced",
+      dailyGoal: 20,
+    };
+    malformed.languagePreferences.japanese = { level: "advanced", dailyGoal: 999 };
+
+    const normalizedMalformed = normalizeLearningData(malformed);
+    assert.ok(normalizedMalformed);
+    assert.deepEqual(normalizedMalformed.languagePreferences.japanese, {
+      level: "advanced",
+      dailyGoal: 20,
+    });
+    assert.equal(normalizedMalformed.profile.level, "advanced");
+    assert.equal(normalizedMalformed.profile.dailyGoal, 20);
+
+    const missing = createEmptyLearningData();
+    missing.profile = {
+      ...legacyProfile,
+      targetLanguage: "french",
+      level: "intermediate",
+      dailyGoal: 15,
+    };
+    delete missing.languagePreferences.french;
+
+    const normalizedMissing = normalizeLearningData(missing);
+    assert.ok(normalizedMissing);
+    assert.deepEqual(normalizedMissing.languagePreferences.french, {
+      level: "intermediate",
+      dailyGoal: 15,
+    });
   });
 
   test("rejects unsupported schemas and sanitizes malformed local storage", () => {

@@ -58,13 +58,23 @@ export interface DailyActivity {
 
 export type LanguageActivity = Record<TargetLanguage, Record<string, DailyActivity>>;
 
+export interface LanguageLearningPreferences {
+  level: LearningLevel;
+  dailyGoal: number;
+}
+
+export type LanguagePreferences = Record<
+  TargetLanguage,
+  LanguageLearningPreferences
+>;
+
 /**
- * Version 2 keeps global history and a separate activity ledger per target
- * language. This allows a learner to switch focus without losing or mixing
- * language-specific goals, streaks, and charts.
+ * Version 3 keeps global history plus separate activity and learning settings
+ * per target language. This lets a learner switch focus without losing or
+ * mixing language-specific goals, levels, streaks, and charts.
  */
 export interface LearningData {
-  version: 2;
+  version: 3;
   profile: LearningProfile | null;
   conversations: Conversation[];
   vocabulary: VocabularyWord[];
@@ -72,6 +82,8 @@ export interface LearningData {
   dailyActivity: Record<string, DailyActivity>;
   /** Activity split by target language for the currently focused workspace. */
   languageActivity: LanguageActivity;
+  /** Level and daily-goal preferences for each target language path. */
+  languagePreferences: LanguagePreferences;
   completedAchievementIds: string[];
 }
 
