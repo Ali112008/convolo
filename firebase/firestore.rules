@@ -1,0 +1,11 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // One snapshot document per signed-in learner. The user ID comes from
+    // Firebase Authentication, never from a client-controlled document path.
+    match /convoloLearningWorkspaces/{userId} {
+      allow read, create, update, delete: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}

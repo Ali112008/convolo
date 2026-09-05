@@ -384,14 +384,29 @@ export function getStarterVocabulary(language: TargetLanguage, now = new Date())
     createdAt: now.toISOString(),
     nextReviewAt: now.toISOString(),
     correctCount: 0,
+    reviewIntervalDays: 0,
+    easeFactor: 2.3,
+    reviewCount: 0,
+    lapseCount: 0,
   }));
+}
+
+function adaptiveTutorGuidance(level: LearningLevel): string {
+  const guidance: Record<LearningLevel, string> = {
+    starter: "Keep it short and complete—one clear phrase is enough right now.",
+    beginner: "Use the phrase once, then try changing one detail to make it yours.",
+    intermediate: "After this phrase, add a reason, preference, or follow-up question.",
+    advanced: "Try a more personal follow-up and vary the wording naturally.",
+  };
+  return guidance[level];
 }
 
 export function createTutorTurn(
   language: TargetLanguage,
   scenarioId: ScenarioId,
   learnerMessage: string,
-  turnNumber: number
+  turnNumber: number,
+  level: LearningLevel = "beginner"
 ): TutorTurn {
   const phrase = TUTOR_PHRASES[language][scenarioId];
   const normalized = learnerMessage.trim().toLowerCase();
@@ -409,7 +424,7 @@ export function createTutorTurn(
     correction: {
       label: hasVeryShortReply ? "Make it a full phrase" : "A more natural option",
       suggestion: phrase.suggestion,
-      explanation: phrase.explanation,
+      explanation: `${phrase.explanation} ${adaptiveTutorGuidance(level)}`,
     },
     vocabulary: phrase.vocabulary,
   };

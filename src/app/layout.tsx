@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { LearningProvider } from "@/components/learning-provider";
+import { PwaController } from "@/components/pwa-controller";
+import { WorkspacePreferencesController } from "@/components/workspace-preferences-controller";
 
 export const metadata: Metadata = {
   title: {
@@ -8,7 +10,7 @@ export const metadata: Metadata = {
     template: "%s · Convolo",
   },
   description:
-    "A local-first language-learning MVP for guided conversations, vocabulary review, and progress tracking.",
+    "A local-first language-learning workspace for guided conversations, adaptive review, placement, and optional cloud sync.",
   applicationName: "Convolo",
 };
 
@@ -20,7 +22,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <LearningProvider>{children}</LearningProvider>
+        <LearningProvider>
+          <PwaController />
+          <WorkspacePreferencesController />
+          {children}
+        </LearningProvider>
       </body>
     </html>
   );

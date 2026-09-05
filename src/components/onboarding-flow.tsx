@@ -103,7 +103,7 @@ export function OnboardingFlow() {
               This short setup personalizes the scenarios, daily goal, and review queue in your local workspace.
             </p>
             <div className="setup-promises">
-              <span><ShieldCheck size={17} /> Stored only in this browser</span>
+              <span><ShieldCheck size={17} /> Starts privately in this browser</span>
               <span><Globe2 size={17} /> Four guided language paths</span>
               <span><Clock3 size={17} /> Ready in less than a minute</span>
             </div>

@@ -19,6 +19,7 @@ import Link from "next/link";
 import type { CSSProperties } from "react";
 import { SCENARIOS, getLanguageLabel, getScenario } from "@/lib/catalog";
 import { getDayKeyForOffset, relativeDayLabel, shortDate } from "@/lib/learning-utils";
+import { sortReviewQueue } from "@/lib/review-scheduling";
 import { useLearning } from "./learning-provider";
 
 const achievements = [
@@ -43,10 +44,9 @@ export function DashboardOverview() {
       .map((conversation) => conversation.scenarioId)
   );
   const nextScenario = SCENARIOS.find((scenario) => !completedScenarioIds.has(scenario.id)) ?? SCENARIOS[0];
-  const dueWords = data.vocabulary.filter(
-    (word) =>
-      word.language === profile.targetLanguage &&
-      new Date(word.nextReviewAt).getTime() <= now
+  const dueWords = sortReviewQueue(
+    data.vocabulary.filter((word) => word.language === profile.targetLanguage),
+    now
   );
   const goalPercent = Math.min(100, Math.round((activeStats.todayMinutes / profile.dailyGoal) * 100));
   const goalRemaining = Math.max(0, profile.dailyGoal - activeStats.todayMinutes);

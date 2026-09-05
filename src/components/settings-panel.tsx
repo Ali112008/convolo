@@ -5,8 +5,6 @@ import {
   ArrowRight,
   CheckCircle2,
   CircleUserRound,
-  Database,
-  Download,
   Globe2,
   Info,
   Languages,
@@ -24,13 +22,15 @@ import {
   getLanguageLabel,
 } from "@/lib/catalog";
 import type { LearningLevel, TargetLanguage } from "@/lib/types";
+import { CloudSyncPanel } from "./cloud-sync-panel";
+import { DataPortabilityPanel } from "./data-portability-panel";
+import { WorkspacePreferencesPanel } from "./workspace-preferences-panel";
 import { useLearning } from "./learning-provider";
 
 export function SettingsPanel() {
   const router = useRouter();
   const {
     data,
-    stats,
     activeStats,
     updateProfile,
     changeTargetLanguage,
@@ -107,19 +107,6 @@ export function SettingsPanel() {
     setConfirmingLanguageChange(false);
     setLanguageChanged(true);
     window.setTimeout(() => setLanguageChanged(false), 3200);
-  }
-
-  function exportData() {
-    const payload = JSON.stringify(data, null, 2);
-    const blob = new Blob([payload], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `convolo-learning-data-${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
   }
 
   function resetAllData() {
@@ -245,21 +232,11 @@ export function SettingsPanel() {
             <p className="language-switch-note"><Info size={15} /> Goals, streaks, vocabulary queues, charts, and scenario status are tracked separately for each target language. Lifetime data remains available in your export.</p>
           </article>
 
-          <article className="settings-card">
-            <div className="settings-card-heading">
-              <span className="settings-card-icon settings-card-icon-blue"><Database size={20} /></span>
-              <div><h2>Your learning data</h2><p>All-time totals below include every language path saved on this device.</p></div>
-            </div>
-            <div className="data-summary-row">
-              <span><strong>{data.conversations.length}</strong><small>conversations</small></span>
-              <span><strong>{data.vocabulary.length}</strong><small>saved words</small></span>
-              <span><strong>{stats.totalXp}</strong><small>lifetime XP</small></span>
-            </div>
-            <div className="data-action-row">
-              <div><h3>Export a backup</h3><p>Download a JSON copy of your profile, per-language activity, conversations, and vocabulary.</p></div>
-              <button className="button button-secondary" type="button" onClick={exportData}><Download size={17} /> Export JSON</button>
-            </div>
-          </article>
+          <DataPortabilityPanel />
+
+          <CloudSyncPanel />
+
+          <WorkspacePreferencesPanel />
 
           <article className="settings-card danger-card">
             <div className="settings-card-heading">
@@ -283,18 +260,18 @@ export function SettingsPanel() {
         <aside className="settings-side-column">
           <article className="local-mode-card">
             <span className="local-mode-icon"><Globe2 size={22} /></span>
-            <span className="card-kicker">HOW THIS MVP RUNS</span>
+            <span className="card-kicker">HOW THIS WORKSPACE RUNS</span>
             <h2>Private by default.</h2>
-            <p>No login service, database, analytics tracker, or AI request is used in this self-contained version.</p>
+            <p>Learning stays in this browser unless you deliberately configure Firebase, create an optional account, and choose to sync.</p>
             <ul>
-              <li><CheckCircle2 size={16} /> Your text stays in this browser</li>
-              <li><CheckCircle2 size={16} /> You can export at any time</li>
-              <li><CheckCircle2 size={16} /> You can reset in one click</li>
+              <li><CheckCircle2 size={16} /> Your tutor text stays on this device</li>
+              <li><CheckCircle2 size={16} /> You can inspect, export, and restore backups</li>
+              <li><CheckCircle2 size={16} /> Cloud replacement always needs a decision</li>
             </ul>
           </article>
           <article className="settings-help-card">
             <Info size={19} />
-            <div><h3>Want cloud sync later?</h3><p>The codebase is ready to evolve: replace the local provider with authenticated storage and a secure server-side tutor route.</p></div>
+            <div><h3>Need another device?</h3><p>Enable the optional Firebase setup when you are ready for deliberate cross-device sync. A secure server-side AI tutor can remain a separate future upgrade.</p></div>
           </article>
           <article className="settings-refresh-card">
             <RefreshCw size={17} />

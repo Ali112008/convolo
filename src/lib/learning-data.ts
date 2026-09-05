@@ -2,15 +2,19 @@ import type {
   Conversation,
   ConversationMessage,
   DailyActivity,
+  InterfaceLanguage,
   LanguageActivity,
   LanguageLearningPreferences,
   LanguagePreferences,
   LearningData,
   LearningLevel,
   LearningProfile,
+  PlacementResult,
   ScenarioId,
   TargetLanguage,
+  TextScale,
   VocabularyWord,
+  WorkspacePreferences,
 } from "./types";
 
 export const TARGET_LANGUAGE_IDS: readonly TargetLanguage[] = [
@@ -40,12 +44,32 @@ const DEFAULT_LANGUAGE_PREFERENCES: LanguageLearningPreferences = {
   level: "starter",
   dailyGoal: 10,
 };
+const DEFAULT_WORKSPACE_PREFERENCES: WorkspacePreferences = {
+  interfaceLanguage: "en",
+  textScale: "default",
+  highContrast: false,
+  reduceMotion: false,
+  reminders: {
+    enabled: false,
+    preferredTime: "19:00",
+  },
+};
 
 export function isTargetLanguage(value: unknown): value is TargetLanguage {
   return (
     typeof value === "string" &&
     TARGET_LANGUAGE_IDS.some((language) => language === value)
   );
+}
+
+function isAvailableInterfaceLanguage(value: unknown): value is InterfaceLanguage {
+  // The schema is ready for RTL locale packs, but English is the only complete
+  // catalog in this release. Falling back avoids a partial translated UI.
+  return value === "en";
+}
+
+function isTextScale(value: unknown): value is TextScale {
+  return value === "default" || value === "large";
 }
 
 function isLearningLevel(value: unknown): value is LearningLevel {
@@ -82,6 +106,18 @@ function boundedNumber(value: unknown, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.round(value)));
 }
 
+function boundedDecimal(value: unknown, min: number, max: number, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(value * 100) / 100));
+}
+
+function defaultReviewInterval(correctCount: number): number {
+  if (correctCount <= 0) return 0;
+  if (correctCount === 1) return 1;
+  if (correctCount === 2) return 3;
+  return Math.min(3650, Math.round(3 * Math.pow(2.15, correctCount - 2)));
+}
+
 function isValidDailyGoal(value: unknown): value is number {
   return (
     typeof value === "number" &&
@@ -98,6 +134,21 @@ function normalizeDailyGoal(value: unknown): number {
     1,
     180
   );
+}
+
+function normalizePlacementResult(value: unknown): PlacementResult | undefined {
+  if (!isRecord(value) || !isLearningLevel(value.recommendedLevel)) return undefined;
+  const totalQuestions = boundedNumber(value.totalQuestions, 1, 40);
+  const score = boundedNumber(value.score, 0, totalQuestions);
+  const completedAt = timestamp(value.completedAt);
+  if (completedAt === EMPTY_DATE) return undefined;
+
+  return {
+    score,
+    totalQuestions,
+    recommendedLevel: value.recommendedLevel,
+    completedAt,
+  };
 }
 
 function normalizeProfile(value: unknown): LearningProfile | null {
@@ -177,6 +228,13 @@ function normalizeVocabularyWord(value: unknown): VocabularyWord | null {
     ? timestamp(value.lastReviewedAt)
     : undefined;
 
+  const correctCount = boundedNumber(value.correctCount, 0, 10_000);
+  const reviewCount = boundedNumber(
+    typeof value.reviewCount === "number" ? value.reviewCount : correctCount,
+    0,
+    10_000
+  );
+
   return {
     id,
     language: value.language,
@@ -188,7 +246,17 @@ function normalizeVocabularyWord(value: unknown): VocabularyWord | null {
     createdAt: timestamp(value.createdAt),
     ...(lastReviewedAt ? { lastReviewedAt } : {}),
     nextReviewAt: timestamp(value.nextReviewAt),
-    correctCount: boundedNumber(value.correctCount, 0, 10_000),
+    correctCount,
+    reviewIntervalDays: boundedNumber(
+      typeof value.reviewIntervalDays === "number"
+        ? value.reviewIntervalDays
+        : defaultReviewInterval(correctCount),
+      0,
+      3_650
+    ),
+    easeFactor: boundedDecimal(value.easeFactor, 1.3, 3.2, 2.3),
+    reviewCount,
+    lapseCount: boundedNumber(value.lapseCount, 0, 10_000),
   };
 }
 
@@ -239,6 +307,13 @@ export function createLanguagePreferences(): LanguagePreferences {
   };
 }
 
+export function createWorkspacePreferences(): WorkspacePreferences {
+  return {
+    ...DEFAULT_WORKSPACE_PREFERENCES,
+    reminders: { ...DEFAULT_WORKSPACE_PREFERENCES.reminders },
+  };
+}
+
 function normalizeLanguageActivity(value: unknown): LanguageActivity {
   const normalized = createLanguageActivity();
   if (!isRecord(value)) return normalized;
@@ -256,14 +331,41 @@ function normalizeLanguagePreferences(value: unknown): LanguagePreferences {
   TARGET_LANGUAGE_IDS.forEach((language) => {
     const preferences = value[language];
     if (!isRecord(preferences)) return;
+    const placement = normalizePlacementResult(preferences.placement);
     normalized[language] = {
       level: isLearningLevel(preferences.level)
         ? preferences.level
         : DEFAULT_LANGUAGE_PREFERENCES.level,
       dailyGoal: normalizeDailyGoal(preferences.dailyGoal),
+      ...(placement ? { placement } : {}),
     };
   });
   return normalized;
+}
+
+function isValidReminderTime(value: unknown): value is string {
+  return typeof value === "string" && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
+function normalizeWorkspacePreferences(value: unknown): WorkspacePreferences {
+  const normalized = createWorkspacePreferences();
+  if (!isRecord(value)) return normalized;
+  const reminders = isRecord(value.reminders) ? value.reminders : null;
+
+  return {
+    interfaceLanguage: isAvailableInterfaceLanguage(value.interfaceLanguage)
+      ? value.interfaceLanguage
+      : normalized.interfaceLanguage,
+    textScale: isTextScale(value.textScale) ? value.textScale : normalized.textScale,
+    highContrast: value.highContrast === true,
+    reduceMotion: value.reduceMotion === true,
+    reminders: {
+      enabled: reminders?.enabled === true,
+      preferredTime: isValidReminderTime(reminders?.preferredTime)
+        ? reminders.preferredTime
+        : normalized.reminders.preferredTime,
+    },
+  };
 }
 
 function hasActivity(activity: Record<string, DailyActivity>): boolean {
@@ -282,25 +384,29 @@ function normalizedAchievements(value: unknown): string[] {
 
 export function createEmptyLearningData(): LearningData {
   return {
-    version: 3,
+    version: 4,
     profile: null,
     conversations: [],
     vocabulary: [],
     dailyActivity: {},
     languageActivity: createLanguageActivity(),
     languagePreferences: createLanguagePreferences(),
+    workspacePreferences: createWorkspacePreferences(),
     completedAchievementIds: [],
   };
 }
 
 /**
- * Accepts V1/V2 browser formats and upgrades them without discarding a
+ * Accepts every historical browser format and upgrades it without discarding a
  * learner's records. Old activity and preferences are assigned to the target
  * language that was active when they were saved. Invalid/tampered localStorage
  * values are reduced to safe values instead of being allowed to break the UI.
  */
 export function normalizeLearningData(value: unknown): LearningData | null {
-  if (!isRecord(value) || (value.version !== 1 && value.version !== 2 && value.version !== 3)) {
+  if (
+    !isRecord(value) ||
+    (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4)
+  ) {
     return null;
   }
 
@@ -327,9 +433,13 @@ export function normalizeLearningData(value: unknown): LearningData | null {
       ? createLanguageActivity()
       : normalizeLanguageActivity(value.languageActivity);
   const languagePreferences =
-    value.version === 3
+    value.version === 3 || value.version === 4
       ? normalizeLanguagePreferences(value.languagePreferences)
       : createLanguagePreferences();
+  const workspacePreferences =
+    value.version === 4
+      ? normalizeWorkspacePreferences(value.workspacePreferences)
+      : createWorkspacePreferences();
 
   if (profile && !hasActivity(languageActivity[profile.targetLanguage]) && hasActivity(dailyActivity)) {
     const noLanguageLedgerExists = TARGET_LANGUAGE_IDS.every(
@@ -351,22 +461,22 @@ export function normalizeLearningData(value: unknown): LearningData | null {
       ? possibleCurrentPreferences
       : null;
     const storedPreferencesForCurrentLanguage =
-      value.version === 3 &&
+      (value.version === 3 || value.version === 4) &&
       rawCurrentPreferences !== null &&
       isLearningLevel(rawCurrentPreferences.level) &&
       isValidDailyGoal(rawCurrentPreferences.dailyGoal);
 
     // V1/V2 had one profile-level goal and level. Migrate them to the path that
-    // was active. For a malformed V3 payload lacking current settings, do the
-    // same instead of unexpectedly changing the learner's visible preferences.
-    if (value.version !== 3 || !storedPreferencesForCurrentLanguage) {
+    // was active. For a malformed V3/V4 payload lacking current settings, do
+    // the same instead of unexpectedly changing visible learner preferences.
+    if ((value.version !== 3 && value.version !== 4) || !storedPreferencesForCurrentLanguage) {
       languagePreferences[profile.targetLanguage] = {
         level: profile.level,
         dailyGoal: profile.dailyGoal,
       };
     }
 
-    // In V3 the path preference is authoritative. The profile mirrors it so
+    // In V3/V4 the path preference is authoritative. The profile mirrors it so
     // existing UI consumers remain simple and cannot display stale settings.
     profile = {
       ...profile,
@@ -376,13 +486,14 @@ export function normalizeLearningData(value: unknown): LearningData | null {
   }
 
   return {
-    version: 3,
+    version: 4,
     profile,
     conversations,
     vocabulary,
     dailyActivity,
     languageActivity,
     languagePreferences,
+    workspacePreferences,
     completedAchievementIds: normalizedAchievements(value.completedAchievementIds),
   };
 }

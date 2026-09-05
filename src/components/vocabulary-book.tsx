@@ -18,8 +18,15 @@ import {
 import { FormEvent, useState } from "react";
 import { getLanguageLabel } from "@/lib/catalog";
 import { shortDate } from "@/lib/learning-utils";
-import type { VocabularyWord } from "@/lib/types";
+import {
+  getReviewStage,
+  isWordDue,
+  reviewIntervalLabel,
+  sortReviewQueue,
+} from "@/lib/review-scheduling";
+import type { ReviewRating, VocabularyWord } from "@/lib/types";
 import { useLearning } from "./learning-provider";
+import { SpeechButton } from "./speech-button";
 
 type Filter = "all" | "due" | "learned";
 
@@ -39,14 +46,12 @@ export function VocabularyBook() {
   if (!profile) return null;
 
   const words = data.vocabulary.filter((word) => word.language === profile.targetLanguage);
-  const dueWords = words
-    .filter((word) => new Date(word.nextReviewAt).getTime() <= now)
-    .sort((a, b) => new Date(a.nextReviewAt).getTime() - new Date(b.nextReviewAt).getTime());
+  const dueWords = sortReviewQueue(words, now);
   const normalizedQuery = query.trim().toLowerCase();
   const wordsToDisplay = words.filter((word) => {
     const matchesFilter =
       filter === "all" ||
-        (filter === "due" && new Date(word.nextReviewAt).getTime() <= now) ||
+        (filter === "due" && isWordDue(word, now)) ||
       (filter === "learned" && word.correctCount > 0);
     const matchesQuery =
       !normalizedQuery ||
@@ -57,7 +62,7 @@ export function VocabularyBook() {
   const reviewWordItem = dueWords[0];
   const languageName = getLanguageLabel(profile.targetLanguage);
 
-  function rateWord(rating: "again" | "good" | "easy") {
+  function rateWord(rating: ReviewRating) {
     if (!reviewWordItem) return;
     reviewWord(reviewWordItem.id, rating);
     setRevealed(false);
@@ -111,8 +116,11 @@ export function VocabularyBook() {
             <div className="review-card-content">
               <span className="section-label">REVIEW QUEUE · {dueWords.length} LEFT</span>
               <div className="review-word-card">
-                <span className="review-language">{languageName.toUpperCase()}</span>
-                <h2>{reviewWordItem.term}</h2>
+                <span className="review-language">{languageName.toUpperCase()} · {getReviewStage(reviewWordItem).toUpperCase()}</span>
+                <div className="review-word-title-row">
+                  <h2>{reviewWordItem.term}</h2>
+                  <SpeechButton text={reviewWordItem.term} language={profile.targetLanguage} label="Hear" />
+                </div>
                 {revealed ? (
                   <div className="review-answer">
                     <strong>{reviewWordItem.translation}</strong>
@@ -130,8 +138,9 @@ export function VocabularyBook() {
                   <p>How easily did this come back to you?</p>
                   <div>
                     <button type="button" className="rating-again" onClick={() => rateWord("again")}>Again <small>10 min</small></button>
-                    <button type="button" className="rating-good" onClick={() => rateWord("good")}>Good <small>tomorrow</small></button>
-                    <button type="button" className="rating-easy" onClick={() => rateWord("easy")}>Easy <small>3 days</small></button>
+                    <button type="button" className="rating-hard" onClick={() => rateWord("hard")}>Hard <small>short interval</small></button>
+                    <button type="button" className="rating-good" onClick={() => rateWord("good")}>Good <small>smart interval</small></button>
+                    <button type="button" className="rating-easy" onClick={() => rateWord("easy")}>Easy <small>longer interval</small></button>
                   </div>
                 </div>
               )}
@@ -235,20 +244,25 @@ export function VocabularyBook() {
 }
 
 function VocabularyWordCard({ word, now }: { word: VocabularyWord; now: number }) {
-  const isDue = new Date(word.nextReviewAt).getTime() <= now;
+  const isDue = isWordDue(word, now);
   const sourceLabel = word.source === "practice" ? "From a practice" : word.source === "manual" ? "Added by you" : "Starter phrase";
+  const stage = getReviewStage(word);
 
   return (
     <article className="word-card">
       <div className="word-card-heading">
         <span className="word-source">{sourceLabel}</span>
-        {isDue ? <span className="word-due">Due now</span> : <span className="word-reviewed">{word.correctCount} review{word.correctCount === 1 ? "" : "s"}</span>}
+        {isDue ? <span className="word-due">Due now</span> : <span className="word-reviewed">{reviewIntervalLabel(word)}</span>}
       </div>
-      <h3>{word.term}</h3>
+      <div className="word-card-term-row">
+        <h3>{word.term}</h3>
+        <SpeechButton text={word.term} language={word.language} label="Hear" />
+      </div>
       <strong>{word.translation}</strong>
       <p>{word.example}</p>
       <footer>
         <span>{word.lastReviewedAt ? `Last reviewed ${shortDate(word.lastReviewedAt)}` : "Not reviewed yet"}</span>
+        <span className={`review-stage review-stage-${stage}`}>{stage}</span>
         {word.notes && <span title={word.notes}><Lightbulb size={15} /></span>}
       </footer>
     </article>

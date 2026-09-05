@@ -16,7 +16,6 @@ import {
   SendHorizontal,
   Sparkles,
   UsersRound,
-  Volume2,
   WandSparkles,
   Zap,
 } from "lucide-react";
@@ -25,19 +24,13 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { SCENARIOS, createTutorTurn, getLanguageLabel, getScenario } from "@/lib/catalog";
 import type { ConversationMessage, ScenarioId, TutorTurn } from "@/lib/types";
 import { useLearning } from "./learning-provider";
+import { SpeechButton } from "./speech-button";
 
 const iconByScenario = {
   coffee: Coffee,
   users: UsersRound,
   map: MapPinned,
   hotel: Hotel,
-};
-
-const localeByLanguage = {
-  spanish: "es-ES",
-  french: "fr-FR",
-  german: "de-DE",
-  japanese: "ja-JP",
 };
 
 export function PracticeStudio() {
@@ -148,7 +141,8 @@ export function PracticeStudio() {
       language,
       activeConversation.scenarioId,
       learnerText,
-      activeConversation.messages.filter((message) => message.role === "learner").length
+      activeConversation.messages.filter((message) => message.role === "learner").length,
+      profile?.level ?? "starter"
     );
     setDraft("");
     setPendingText(learnerText);
@@ -180,15 +174,6 @@ export function PracticeStudio() {
     setLastFeedback(null);
     setConfirmingDraftDiscard(false);
     setIsReplying(false);
-  }
-
-  function speak(text: string) {
-    if (!("speechSynthesis" in window)) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = localeByLanguage[language];
-    utterance.rate = 0.86;
-    window.speechSynthesis.speak(utterance);
   }
 
   return (
@@ -266,6 +251,7 @@ export function PracticeStudio() {
                 <div>
                   <p>{scenarioContent.opening}</p>
                   <small>{scenarioContent.openingTranslation}</small>
+                  <SpeechButton text={scenarioContent.opening} language={language} />
                 </div>
               </div>
               {selectedDraft ? (
@@ -353,9 +339,7 @@ export function PracticeStudio() {
                           {message.role === "tutor" && index === 0 && <span className="bubble-speaker">LUCÍA · TUTOR</span>}
                           <p>{message.text}</p>
                           {message.role === "tutor" && (
-                            <button className="speak-button" type="button" onClick={() => speak(message.text)} aria-label="Hear this phrase">
-                              <Volume2 size={14} /> Listen
-                            </button>
+                            <SpeechButton text={message.text} language={language} />
                           )}
                           {showTranslations && message.translation && <small>{message.translation}</small>}
                         </div>

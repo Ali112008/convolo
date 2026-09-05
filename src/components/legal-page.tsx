@@ -9,47 +9,55 @@ const content = {
     eyebrow: "PRIVACY",
     title: "Your learning data stays with you.",
     intro:
-      "This Convolo MVP is built as a local-first demonstration. It does not run a user database, send analytics, or submit your conversation text to a remote AI service.",
+      "Convolo stays local-first by default. It does not send analytics or submit your conversation text to a remote AI service. Optional cloud sync is shown only when its Firebase deployment configuration has been enabled.",
     sections: [
       {
-        heading: "What the app stores",
-        body: "The app stores your local profile, selected language, practice history, vocabulary, and progress in your browser localStorage. This lets the workspace survive a refresh on the same browser.",
+        heading: "What the app stores locally",
+        body: "The app stores your local profile, selected language, placement result, practice history, vocabulary, review schedule, reminder preference, and progress in browser localStorage. This lets the workspace survive a refresh on the same browser.",
       },
       {
-        heading: "What leaves your device",
-        body: "Nothing in the learning workspace is intentionally sent to a Convolo server because this version has no server-side learning API. The browser may still make normal requests to load the deployed website assets.",
+        heading: "When data leaves your device",
+        body: "Nothing in the learning workspace is intentionally sent to a Convolo learning server by default. If you configure Firebase, create or sign in to an optional account, and explicitly choose Sync now, the current workspace snapshot is sent to your Firebase Firestore project so you can use it on another signed-in device.",
+      },
+      {
+        heading: "Audio and reminders",
+        body: "The audio controls use your browser or device text-to-speech capability. Convolo does not upload phrases for playback. Optional PWA reminders are requested from your browser only after you opt in and grant notification permission.",
       },
       {
         heading: "Your controls",
-        body: "You can download a JSON backup from Settings. You can also erase all local learning data from Settings or by clearing this site’s browser storage.",
+        body: "You can export a JSON backup, inspect a backup before restoring it, undo the latest restore once, sign out of cloud sync, or erase all local data from Settings. Cloud restore and conflict screens ask for a deliberate choice before replacing either copy.",
       },
       {
-        heading: "If cloud features are added",
-        body: "A production version with authentication, cloud sync, payments, or an AI provider would require an updated privacy notice before collecting or transmitting personal data.",
+        heading: "Cloud deployment responsibility",
+        body: "A deployment owner enabling Firebase must use the included Firestore security rules, secure the Firebase project, and publish contact, retention, and deletion policies appropriate for their users and jurisdiction.",
       },
     ],
   },
   terms: {
     eyebrow: "TERMS",
-    title: "A clear agreement for this local MVP.",
+    title: "A clear agreement for this local-first workspace.",
     intro:
-      "Convolo is presented here as a self-contained language-learning MVP. It is a guided practice tool, not a substitute for a teacher, translator, or emergency service.",
+      "Convolo is a guided language-practice tool, not a substitute for a teacher, translator, professional assessment, or emergency service.",
     sections: [
       {
-        heading: "Using the workspace",
-        body: "You may use the local learning features for personal practice. The tutor feedback is deterministic guidance designed for demonstration, so verify important translations with a qualified source.",
+        heading: "Using the learning tools",
+        body: "You may use conversations, placement checks, adaptive recommendations, audio playback, and vocabulary review for personal practice. Tutor feedback and placement results are deterministic guidance, so verify important translations or high-stakes language with a qualified source.",
       },
       {
-        heading: "Your local data",
-        body: "You are responsible for exporting any learning data you want to keep. Clearing browser storage or using a different browser/device may remove access to that local data.",
+        heading: "Local data and backups",
+        body: "You remain responsible for backups you choose to keep. Restore intentionally replaces the current local workspace after confirmation; Convolo creates one local rollback copy, but it is not a permanent archive.",
       },
       {
-        heading: "No paid service in this version",
-        body: "This MVP has no account billing, subscription, or payment feature. It does not promise cloud backup or real-time human or AI tutoring.",
+        heading: "Optional cloud accounts",
+        body: "Cloud sync is optional and available only on deployments configured with Firebase. You choose whether a local or cloud workspace is restored or uploaded. Do not share your account password, and sign out on shared devices.",
+      },
+      {
+        heading: "Availability and notifications",
+        body: "There is no payment or subscription feature in this version. PWA installation, browser voices, and background reminder timing depend on browser and device support and are provided on a best-effort basis.",
       },
       {
         heading: "Future production terms",
-        body: "If connected services are added later, the terms will need to be updated to cover those services, their providers, and any applicable billing rules.",
+        body: "A public hosted service may need additional terms covering its connected-service providers, applicable privacy law, support commitments, retention, and any future billing.",
       },
     ],
   },

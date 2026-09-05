@@ -33,7 +33,7 @@ const features = [
     icon: BookOpenCheck,
     title: "Vocabulary that stays with you",
     description:
-      "Words from your sessions land in a personal review queue, then come back on a simple spaced schedule.",
+      "Words from your sessions enter an adaptive review queue that reacts to confidence, lapses, and recall spacing.",
   },
   {
     icon: BarChart3,
@@ -45,7 +45,7 @@ const features = [
     icon: BrainCircuit,
     title: "A learning plan that fits",
     description:
-      "Choose your level, language, and daily goal. The workspace keeps the next small step in view.",
+      "Take a placement check, keep your own level decision, and get a next step based on review and practice history.",
   },
 ];
 
@@ -53,12 +53,12 @@ const faqs = [
   {
     question: "Is this connected to a real AI service?",
     answer:
-      "This rebuild is intentionally self-contained. The tutor uses guided, local response logic so every core flow works without an API key, account server, or external database. The code is structured so a real AI route can be added later.",
+      "The tutor uses guided, local response logic, so it works without an AI API key. Optional Firebase accounts and cloud sync are separate from the tutor and remain off until a deployment owner configures them.",
   },
   {
     question: "Where is my data saved?",
     answer:
-      "Your profile, practice history, and vocabulary are stored only in this browser using localStorage. You can export or erase them from Settings at any time.",
+      "Your workspace starts in browser localStorage. You can export, inspect, restore, or erase it in Settings. If you explicitly enable configured Firebase cloud sync, a snapshot can also be saved to your signed-in cloud account.",
   },
   {
     question: "Which languages can I practice?",
@@ -68,7 +68,7 @@ const faqs = [
   {
     question: "Do I need to pay to use it?",
     answer:
-      "No. This local-first MVP has no payment flow and no hidden subscription. It is ready to demonstrate the complete learning journey offline from third-party services.",
+      "No. This MVP has no payment flow or hidden subscription. Its full local learning path works without an external account; cloud sync is optional when a deployment owner enables Firebase.",
   },
 ];
 
@@ -327,18 +327,18 @@ export function Landing() {
           <div className="container local-first-card">
             <div>
               <span className="section-label">Transparent by design</span>
-              <h2>A working product without pretending there is a backend.</h2>
+              <h2>A working product that keeps you in control.</h2>
               <p>
-                This rebuild stores learning data locally, uses deterministic tutor guidance, and
-                gives you export and reset controls. It is a complete demonstrable MVP now, with
-                a clean foundation for real authentication, AI, payments, and cloud sync later.
+                Convolo stores learning locally, uses deterministic tutor guidance, and gives you
+                safe export, restore, and reset controls. Optional Firebase cloud sync is isolated
+                behind an explicit account and a deliberate device-versus-cloud decision.
               </p>
             </div>
             <div className="local-first-checklist">
-              <span><CheckCircle2 size={18} /> Onboarding and profile</span>
-              <span><CheckCircle2 size={18} /> Interactive practice sessions</span>
-              <span><CheckCircle2 size={18} /> Vocabulary review scheduling</span>
-              <span><CheckCircle2 size={18} /> Streaks, goals, and exports</span>
+              <span><CheckCircle2 size={18} /> Onboarding and placement checks</span>
+              <span><CheckCircle2 size={18} /> Interactive practice with device audio</span>
+              <span><CheckCircle2 size={18} /> Adaptive vocabulary review scheduling</span>
+              <span><CheckCircle2 size={18} /> Backups, PWA reminders, and optional sync</span>
             </div>
           </div>
         </section>

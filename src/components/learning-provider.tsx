@@ -15,6 +15,7 @@ import {
   createEmptyLearningData,
   createLanguageActivity,
   createLanguagePreferences,
+  createWorkspacePreferences,
   isTargetLanguage,
   normalizeLearningData,
 } from "@/lib/learning-data";
@@ -25,16 +26,27 @@ import {
   emptyActivity,
   getDayKeyForOffset,
 } from "@/lib/learning-utils";
+import { scheduleVocabularyReview } from "@/lib/review-scheduling";
 import type {
   LearningData,
+  LearningLevel,
   LearningProfile,
+  ReviewRating,
   ScenarioId,
   TargetLanguage,
   TutorTurn,
+  WorkspacePreferences,
 } from "@/lib/types";
 
 const STORAGE_KEY = "convolo.local-learning-data.v1";
+const PRE_RESTORE_BACKUP_KEY = "convolo.local-learning-data.before-restore.v1";
 const XP_PER_PRACTICE_TURN = 12;
+const LEARNING_LEVELS: readonly LearningLevel[] = [
+  "starter",
+  "beginner",
+  "intermediate",
+  "advanced",
+];
 const EMPTY_DATA = createEmptyLearningData();
 
 type ProfileBasics = Pick<LearningProfile, "name" | "email">;
@@ -43,6 +55,19 @@ type OnboardingInput = ProfileBasics &
     LearningProfile,
     "nativeLanguage" | "targetLanguage" | "level" | "dailyGoal"
   >;
+
+type WorkspacePreferenceUpdates = Partial<
+  Omit<WorkspacePreferences, "reminders">
+> & {
+  reminders?: Partial<WorkspacePreferences["reminders"]>;
+};
+
+interface PlacementInput {
+  language: TargetLanguage;
+  score: number;
+  totalQuestions: number;
+  recommendedLevel: LearningLevel;
+}
 
 interface RecordPracticeTurnInput {
   conversationId: string;
@@ -75,6 +100,12 @@ interface LearningContextValue {
   ) => void;
   /** Changes the active learning path without deleting past language records. */
   changeTargetLanguage: (language: TargetLanguage) => void;
+  /** Saves a diagnostic result without silently changing the learner's level. */
+  recordPlacement: (input: PlacementInput) => void;
+  updateWorkspacePreferences: (updates: WorkspacePreferenceUpdates) => void;
+  /** Replaces local data only after a caller has previewed and confirmed a backup. */
+  restoreLearningData: (value: unknown) => boolean;
+  undoLastRestore: () => boolean;
   /** Starts or resumes the only unfinished conversation for a language/scene pair. */
   startConversation: (scenarioId: ScenarioId) => string;
   recordPracticeTurn: (input: RecordPracticeTurnInput) => void;
@@ -82,7 +113,7 @@ interface LearningContextValue {
   /** Removes an unfinished draft but retains earned practice time and XP. */
   discardConversation: (conversationId: string) => void;
   addWord: (input: AddWordInput) => void;
-  reviewWord: (wordId: string, rating: "again" | "good" | "easy") => void;
+  reviewWord: (wordId: string, rating: ReviewRating) => void;
   resetLearningData: () => void;
 }
 
@@ -90,6 +121,24 @@ const LearningContext = createContext<LearningContextValue | null>(null);
 
 function makeId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function isLearningLevel(value: unknown): value is LearningLevel {
+  return LEARNING_LEVELS.includes(value as LearningLevel);
+}
+
+function isReminderTime(value: unknown): value is string {
+  return typeof value === "string" && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
+function isDailyGoal(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    Number.isFinite(value) &&
+    value >= 1 &&
+    value <= 180
+  );
 }
 
 function addUniqueAchievement(
@@ -167,6 +216,8 @@ function createDemoData(): LearningData {
   const vocabulary = getStarterVocabulary("spanish", now).map((word, index) => ({
     ...word,
     correctCount: index < 3 ? index + 1 : 0,
+    reviewCount: index < 3 ? index + 1 : 0,
+    reviewIntervalDays: [1, 3, 7][index] ?? 0,
     lastReviewedAt: index < 3 ? now.toISOString() : undefined,
   }));
   const dailyActivity = {
@@ -178,9 +229,10 @@ function createDemoData(): LearningData {
   languageActivity.spanish = { ...dailyActivity };
   const languagePreferences = createLanguagePreferences();
   languagePreferences.spanish = { level: "beginner", dailyGoal: 10 };
+  const workspacePreferences = createWorkspacePreferences();
 
   return {
-    version: 3,
+    version: 4,
     profile,
     conversations: [
       {
@@ -219,6 +271,7 @@ function createDemoData(): LearningData {
     dailyActivity,
     languageActivity,
     languagePreferences,
+    workspacePreferences,
     completedAchievementIds: ["first-turn", "first-conversation", "word-collector"],
   };
 }
@@ -251,7 +304,12 @@ export function LearningProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!hydrated) return;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch {
+      // A blocked or full browser store must not make the learning session
+      // unusable. Explicit restore still reports its own rollback failure.
+    }
   }, [data, hydrated]);
 
   useEffect(() => {
@@ -279,6 +337,11 @@ export function LearningProvider({ children }: { children: ReactNode }) {
 
   const completeOnboarding = useCallback((input: OnboardingInput) => {
     const completedAt = new Date();
+    const targetLanguage = isTargetLanguage(input.targetLanguage)
+      ? input.targetLanguage
+      : "spanish";
+    const level = isLearningLevel(input.level) ? input.level : "starter";
+    const dailyGoal = isDailyGoal(input.dailyGoal) ? input.dailyGoal : 10;
     setNow(completedAt.getTime());
     setData((current) => ({
       ...current,
@@ -286,25 +349,25 @@ export function LearningProvider({ children }: { children: ReactNode }) {
         name: input.name.trim() || "Learner",
         email: input.email.trim(),
         nativeLanguage: input.nativeLanguage,
-        targetLanguage: input.targetLanguage,
-        level: input.level,
-        dailyGoal: input.dailyGoal,
+        targetLanguage,
+        level,
+        dailyGoal,
         onboarded: true,
         joinedAt: current.profile?.joinedAt ?? completedAt.toISOString(),
       },
       vocabulary: [
-        ...starterWordsMissingFrom(current, input.targetLanguage, completedAt),
+        ...starterWordsMissingFrom(current, targetLanguage, completedAt),
         ...current.vocabulary,
       ],
       languageActivity: {
         ...current.languageActivity,
-        [input.targetLanguage]: current.languageActivity[input.targetLanguage] ?? {},
+        [targetLanguage]: current.languageActivity[targetLanguage] ?? {},
       },
       languagePreferences: {
         ...current.languagePreferences,
-        [input.targetLanguage]: {
-          level: input.level,
-          dailyGoal: input.dailyGoal,
+        [targetLanguage]: {
+          level,
+          dailyGoal,
         },
       },
     }));
@@ -330,8 +393,11 @@ export function LearningProvider({ children }: { children: ReactNode }) {
           dailyGoal: current.profile.dailyGoal,
         };
         const nextPreferences = {
-          level: updates.level ?? activePreferences.level,
-          dailyGoal: updates.dailyGoal ?? activePreferences.dailyGoal,
+          ...activePreferences,
+          level: isLearningLevel(updates.level) ? updates.level : activePreferences.level,
+          dailyGoal: isDailyGoal(updates.dailyGoal)
+            ? updates.dailyGoal
+            : activePreferences.dailyGoal,
         };
 
         return {
@@ -466,6 +532,10 @@ export function LearningProvider({ children }: { children: ReactNode }) {
               createdAt: recordedAt,
               nextReviewAt: recordedAt,
               correctCount: 0,
+              reviewIntervalDays: 0,
+              easeFactor: 2.3,
+              reviewCount: 0,
+              lapseCount: 0,
             },
             ...current.vocabulary,
           ];
@@ -596,6 +666,10 @@ export function LearningProvider({ children }: { children: ReactNode }) {
             createdAt,
             nextReviewAt: createdAt,
             correctCount: 0,
+            reviewIntervalDays: 0,
+            easeFactor: 2.3,
+            reviewCount: 0,
+            lapseCount: 0,
           },
           ...current.vocabulary,
         ],
@@ -604,22 +678,15 @@ export function LearningProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const reviewWord = useCallback(
-    (wordId: string, rating: "again" | "good" | "easy") => {
+    (wordId: string, rating: ReviewRating) => {
       const reviewedAt = new Date();
       setNow(reviewedAt.getTime());
-      const nextReview = new Date(reviewedAt);
-      if (rating === "again") {
-        nextReview.setMinutes(nextReview.getMinutes() + 10);
-      } else {
-        const intervals = { good: 1, easy: 3 };
-        nextReview.setDate(nextReview.getDate() + intervals[rating]);
-      }
-
       setData((current) => {
         const reviewedWord = current.vocabulary.find((word) => word.id === wordId);
         if (!reviewedWord) return current;
+        const schedule = scheduleVocabularyReview(reviewedWord, rating, reviewedAt);
         const activity = addActivity(current, reviewedWord.language, {
-          xp: rating === "easy" ? 8 : 5,
+          xp: rating === "easy" ? 8 : rating === "again" ? 2 : 5,
           minutes: 1,
           turns: 0,
         });
@@ -631,10 +698,8 @@ export function LearningProvider({ children }: { children: ReactNode }) {
             word.id === wordId
               ? {
                   ...word,
-                  correctCount:
-                    rating === "again" ? word.correctCount : word.correctCount + 1,
+                  ...schedule,
                   lastReviewedAt: reviewedAt.toISOString(),
-                  nextReviewAt: nextReview.toISOString(),
                 }
               : word
           ),
@@ -644,8 +709,120 @@ export function LearningProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  const recordPlacement = useCallback((input: PlacementInput) => {
+    if (!isTargetLanguage(input.language) || !isLearningLevel(input.recommendedLevel)) return;
+    const totalQuestions = Math.min(40, Math.max(1, Math.round(input.totalQuestions)));
+    const score = Math.min(totalQuestions, Math.max(0, Math.round(input.score)));
+    const completedAt = new Date().toISOString();
+
+    setData((current) => {
+      const existingPreferences = current.languagePreferences[input.language] ?? {
+        level: "starter" as const,
+        dailyGoal: 10,
+      };
+      return {
+        ...current,
+        languagePreferences: {
+          ...current.languagePreferences,
+          [input.language]: {
+            ...existingPreferences,
+            placement: {
+              score,
+              totalQuestions,
+              recommendedLevel: input.recommendedLevel,
+              completedAt,
+            },
+          },
+        },
+      };
+    });
+    setNow(new Date(completedAt).getTime());
+  }, []);
+
+  const updateWorkspacePreferences = useCallback((updates: WorkspacePreferenceUpdates) => {
+    setData((current) => {
+      const previous = current.workspacePreferences ?? createWorkspacePreferences();
+      const previousReminders = previous.reminders;
+      return {
+        ...current,
+        workspacePreferences: {
+          interfaceLanguage:
+            updates.interfaceLanguage === "en"
+              ? updates.interfaceLanguage
+              : previous.interfaceLanguage,
+          textScale:
+            updates.textScale === "default" || updates.textScale === "large"
+              ? updates.textScale
+              : previous.textScale,
+          highContrast:
+            typeof updates.highContrast === "boolean"
+              ? updates.highContrast
+              : previous.highContrast,
+          reduceMotion:
+            typeof updates.reduceMotion === "boolean"
+              ? updates.reduceMotion
+              : previous.reduceMotion,
+          reminders: {
+            enabled:
+              typeof updates.reminders?.enabled === "boolean"
+                ? updates.reminders.enabled
+                : previousReminders.enabled,
+            preferredTime: isReminderTime(updates.reminders?.preferredTime)
+              ? updates.reminders.preferredTime
+              : previousReminders.preferredTime,
+          },
+        },
+      };
+    });
+  }, []);
+
+  const restoreLearningData = useCallback(
+    (value: unknown): boolean => {
+      const restored = normalizeLearningData(value);
+      if (!restored) return false;
+
+      try {
+        // Keep exactly one pre-restore snapshot so a confirmed import can be
+        // undone without relying on the uploaded file still being available.
+        window.localStorage.setItem(PRE_RESTORE_BACKUP_KEY, JSON.stringify(data));
+      } catch {
+        return false;
+      }
+
+      createdDraftIds.current = {};
+      setData(restored);
+      setNow(Date.now());
+      return true;
+    },
+    [data]
+  );
+
+  const undoLastRestore = useCallback((): boolean => {
+    try {
+      const rawBackup = window.localStorage.getItem(PRE_RESTORE_BACKUP_KEY);
+      if (!rawBackup) return false;
+      const restored = normalizeLearningData(JSON.parse(rawBackup));
+      if (!restored) {
+        window.localStorage.removeItem(PRE_RESTORE_BACKUP_KEY);
+        return false;
+      }
+      window.localStorage.removeItem(PRE_RESTORE_BACKUP_KEY);
+      createdDraftIds.current = {};
+      setData(restored);
+      setNow(Date.now());
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
   const resetLearningData = useCallback(() => {
-    window.localStorage.removeItem(STORAGE_KEY);
+    try {
+      window.localStorage.removeItem(STORAGE_KEY);
+      window.localStorage.removeItem(PRE_RESTORE_BACKUP_KEY);
+    } catch {
+      // Keep the in-memory reset usable when browser storage is unavailable.
+    }
     createdDraftIds.current = {};
     setData(createEmptyLearningData());
     setNow(Date.now());
@@ -671,6 +848,10 @@ export function LearningProvider({ children }: { children: ReactNode }) {
       startDemo,
       updateProfile,
       changeTargetLanguage,
+      recordPlacement,
+      updateWorkspacePreferences,
+      restoreLearningData,
+      undoLastRestore,
       startConversation,
       recordPracticeTurn,
       finishConversation,
@@ -690,13 +871,17 @@ export function LearningProvider({ children }: { children: ReactNode }) {
       hydrated,
       now,
       prepareLearner,
+      recordPlacement,
       recordPracticeTurn,
       resetLearningData,
+      restoreLearningData,
       reviewWord,
       startConversation,
       startDemo,
       stats,
+      undoLastRestore,
       updateProfile,
+      updateWorkspacePreferences,
     ]
   );
 

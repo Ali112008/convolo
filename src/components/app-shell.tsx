@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   Menu,
   MessageCircleMore,
+  Route,
   Settings2,
   Sparkles,
   X,
@@ -20,6 +21,7 @@ import { useLearning } from "./learning-provider";
 
 const navigation = [
   { href: "/app", label: "Overview", icon: LayoutDashboard, exact: true },
+  { href: "/app/plan", label: "My plan", icon: Route },
   { href: "/app/practice", label: "Practice", icon: MessageCircleMore },
   { href: "/app/vocabulary", label: "Vocabulary", icon: BookOpenCheck },
   { href: "/app/progress", label: "Progress", icon: BarChart3 },
@@ -50,6 +52,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="workspace-page">
+      <a className="skip-link" href="#workspace-main">Skip to workspace content</a>
       <aside className={`workspace-sidebar ${menuOpen ? "sidebar-open" : ""}`}>
         <div className="sidebar-top">
           <Brand href="/app" />
@@ -99,7 +102,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <p>{activeStats.todayMinutes} of {profile.dailyGoal} min practiced today</p>
         </div>
         <div className="sidebar-local-note">
-          <span className="local-status-dot" /> Local-only mode
+          <span className="local-status-dot" /> Local-first mode
         </div>
       </aside>
 
@@ -133,7 +136,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Link>
           </div>
         </header>
-        <main className="workspace-main">{children}</main>
+        <main className="workspace-main" id="workspace-main">{children}</main>
       </div>
     </div>
   );
